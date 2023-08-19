@@ -707,5 +707,108 @@ void dynamic_model< T >::set_simple_model(const int _viscosity_model, const T Cs
     negvisc_backscatter = false;
 }
 
+template< typename T >
+T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width, 
+    bool clipping, const uniGrid2d< T >& grid)
+{
+    /*
+    Represents dynamic model for momentum flux
+    with possible clipping of the Leonard stress
+
+    A priori analysis on deep learning of subgrid-scale parameterizations for Kraichnan turbulence
+    Pawar, San, 2020
+    */
+    T lxx[grid.size], lyy[grid.size], lxy[grid.size];
+    T sxx[grid.size], sxy[grid.size], syy[grid.size], S_center[grid.size], S_corner[grid.size];
+    T uf[grid.size], vf[grid.size];
+    T mxx[grid.size], myy[grid.size], mxy[grid.size];
+    T mxxf[grid.size], myyf[grid.size], mxyf[grid.size];
+    T Mxx[grid.size], Myy[grid.size], Mxy[grid.size];
+    T LM[grid.size], MM[grid.size];
+
+    // Trace-free Leonard stress
+    compute_leonard_tensor(lxx, lxy, lyy, u, v, test_width, grid);
+    
+    // Smagorinsky model on the base level
+    strain_tensor(sxx, sxy, syy, u, v, grid);
+    compute_S(S_center, sxx, sxy, syy, grid);
+    p_to_w(S_corner, S_center, grid);
+
+    T mix_length = base_width * grid.dx;
+    for (int i = 0; i < grid.size; i++) {
+        mxx[i] = - 2.0 * sqr(mix_length) * S_center[i] * sxx[i];
+        myy[i] = - 2.0 * sqr(mix_length) * S_center[i] * syy[i];
+        mxy[i] = - 2.0 * sqr(mix_length) * S_corner[i] * sxy[i];
+    }
+
+    // Filtering of the base model
+    apply_filter(mxxf, mxx, test_width, (T)0.0, grid);
+    apply_filter(myyf, myy, test_width, (T)0.0, grid);
+    apply_filter(mxyf, mxy, test_width, (T)0.0, grid);
+
+    // Smagorinsky model on the test level
+    apply_filter(uf, u, test_width, (T)0.0, grid);
+    apply_filter(vf, u, test_width, (T)0.0, grid);
+
+    strain_tensor(sxx, sxy, syy, uf, vf, grid);
+    compute_S(S_center, sxx, sxy, syy, grid);
+    p_to_w(S_corner, S_center, grid);
+
+    T tb_width = sqrt(sqr(test_width) + sqr(base_width));
+    mix_length = tb_width * grid.dx;
+    for (int i = 0; i < grid.size; i++) {
+        Mxx[i] = - 2.0 * sqr(mix_length) * S_center[i] * sxx[i] - mxxf[i];
+        Myy[i] = - 2.0 * sqr(mix_length) * S_center[i] * syy[i] - myyf[i];
+        Mxy[i] = - 2.0 * sqr(mix_length) * S_corner[i] * sxy[i] - mxyf[i];
+    }
+
+    scal_prod_tensors(LM, lxx, lxy, lyy, Mxx, Mxy, Myy, grid);
+    scal_prod_tensors(MM, Mxx, Mxy, Myy, Mxx, Mxy, Myy, grid);
+
+    T epsilon = std::numeric_limits<T>::min();
+    T Cs2_mean;
+    Cs2_mean = min(integrate_xy(LM, grid) / (integrate_xy(MM, grid) + epsilon), (T)1.0);
+    
+    if (Cs2_mean < (T)0.0){
+        printf("Mean value of Cs2<0; Mean value will be clipped to zero\n");
+    }
+
+    Cs2_mean = max(Cs2_mean, (T)0.0);
+
+    // it is local clipping followed by the averaging
+    if (clipping) {
+        for (int i = 0; i < grid.size; i++) {
+            LM[i] = max(LM[i], (T)0.0);
+        }
+        Cs2_mean = min(integrate_xy(LM, grid) / (integrate_xy(MM, grid) + epsilon), (T)1.0);
+    }
+
+    // Multiply base-level model by the smagorinsky constant
+    for (int i = 0; i < grid.size; i++) {
+        mxx[i] *= Cs2_mean;
+        mxy[i] *= Cs2_mean;
+        myy[i] *= Cs2_mean;
+    }
+
+    // Compute forcing in momentum equation
+    T fx[grid.size], fy[grid.size];
+
+    // minus is already included
+    divergence_tensor(fx, fy, mxx, mxy, myy, grid);
+
+    T vorticity_forcing[grid.size];
+
+    velocity_to_vorticity(vorticity_forcing, fx, fy, grid);
+
+    update(wim, (T)1.0, vorticity_forcing, grid.size);
+
+    return Cs2_mean;
+}
+
 template struct dynamic_model< float >;
 template struct dynamic_model< double >;
+
+template float DSM_Pawar(float* wim, float* u, float* v, float test_width, 
+    float base_width, bool clipping, const uniGrid2d< float >& grid);
+template double DSM_Pawar(double* wim, double* u, double* v, double test_width, 
+    double base_width, bool clipping, const uniGrid2d< double >& grid);

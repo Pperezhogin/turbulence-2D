@@ -50,6 +50,24 @@ void scal_prod(T* ls, T* lx, T* ly, T* sx, T* sy, const uniGrid2d< T >& grid)
     }
 }
 
+// Assuming lxx and lyy compnents in the grid center and lxy in the grid corner. The
+// result is returned in the center of the grid cell.
+template < typename T >
+void scal_prod_tensors(T* ls, T* lxx, T* lxy, T* lyy, T* sxx, T* sxy, T* syy, const uniGrid2d< T >& grid)
+{
+    T ls_corner[grid.size];
+
+    mul(ls_corner, lxy, sxy, grid.size);
+
+    w_to_p(ls, ls_corner, grid);
+
+    for (int i = 0; i < grid.size; i++) {
+        // (T)2.0 because we need to account for the 
+        // diagonal element twice
+        ls[i] = (T)2.0 * ls[i] + lxx[i] * sxx[i] + lyy[i] * syy[i];
+    }
+}
+
 template< typename T >
 T integrate_xy(const T* u, const uniGrid2d< T >& grid)
 {
@@ -832,6 +850,58 @@ void compute_leonard_vector(T* lx, T* ly, T* w, T* u, T* v, const T test_width, 
 
     mul(lx, Csim, grid.size);
     mul(ly, Csim, grid.size);
+}
+
+// L = filter(uu) - filter(u)filter(u)
+// lxx, lyy in center points, lxy in corner points
+template < typename T >
+void compute_leonard_tensor(T* lxx, T* lxy, T* lyy, T* u, T* v, const T test_width, const uniGrid2d< T >& grid)
+{   
+    T u_center[grid.size], v_center[grid.size], u_corner[grid.size], v_corner[grid.size];
+    T uu[grid.size], vv[grid.size], uv[grid.size];
+    T uc[grid.size], vc[grid.size];
+
+    // ----- first part of Leonard tensor ---- //
+
+    u_to_p(u_center, u, grid);
+    v_to_p(v_center, v, grid);
+    u_to_w(u_corner, u, grid);
+    v_to_w(v_corner, v, grid);
+
+    mul(uu, u_center, u_center, grid.size);
+    mul(vv, v_center, v_center, grid.size);
+    mul(uv, u_corner, v_corner, grid.size);
+
+    apply_filter(lxx, uu, test_width, (T)0.0, grid);
+    apply_filter(lxy, uv, test_width, (T)0.0, grid);
+    apply_filter(lyy, vv, test_width, (T)0.0, grid);
+
+    // ----- second part of Leonard tensor ---- //
+
+    apply_filter(uc, u, test_width, (T)0.0, grid);
+    apply_filter(vc, u, test_width, (T)0.0, grid);
+
+    u_to_p(u_center, uc, grid);
+    v_to_p(v_center, vc, grid);
+    u_to_w(u_corner, uc, grid);
+    v_to_w(v_corner, vc, grid);
+
+    mul(uu, u_center, u_center, grid.size);
+    mul(vv, v_center, v_center, grid.size);
+    mul(uv, u_corner, v_corner, grid.size);
+
+    // ---------- full Leonard tensor -------- //
+    
+    update(lxx, -(T)1.0, uu, grid.size);
+    update(lxy, -(T)1.0, uv, grid.size);
+    update(lyy, -(T)1.0, vv, grid.size);
+
+    T half_trace;
+    for (int i = 0; i < grid.size; i++) {
+        half_trace = 0.5 * (lxx[i] + lyy[i]);
+        lxx[i] -= half_trace;
+        lyy[i] -= half_trace;
+    }
 }
 
 template < typename T >

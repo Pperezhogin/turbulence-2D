@@ -117,3 +117,7 @@ struct dynamic_model
         void germano_error(T* w, T* u, T* v, const uniGrid2d< T >& grid);
         void update_subgrid_KE(T* w, T* u, T* v, T dt, const uniGrid2d< T >&grid);
 };
+
+template < typename T >
+	T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width, 
+    bool clipping, const uniGrid2d< T >& grid);
