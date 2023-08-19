@@ -8,15 +8,15 @@
 #include <algorithm>
 #include <limits>
 
-//#define MESH_HAT_FILTER
-#define SPECTRAL_GAUSS_FILTER
+#define MESH_HAT_FILTER
+//#define SPECTRAL_GAUSS_FILTER
 //#define ADM_LAYTON
 #define ADM_CHOW
 
 using namespace nse;
 
 enum {lap, bilap, lap_leith, lap_smag, bilap_smag, lap_w_smag, bilap_w_smag, bilap_leith}; // viscosity models
-enum {averaging_global, clipping, lagrangian, dyn2, dyn2_ZE}; // averaging methods. dyn2 stands for MSE of 2 constants. Applicable only for reynolds
+enum {averaging_global, clipping, lagrangian, dyn2, dyn2_ZE, dyn2_Morinishi, Maulik2017}; // averaging methods. dyn2 stands for MSE of 2 constants. Applicable only for reynolds
 enum {mixed_ssm, mixed_ngm};
 
 //////////////////////////////////////////////////////////////
@@ -162,24 +162,51 @@ T min_xy(const T* u, const uniGrid2d< T >& grid)
 }
 
 template < typename T >
-void dyn2_Cr_Cs_MSE(T &Cs2, T &Cr, T* taux, T* tauy, T* tx, T* ty, T* bx, T* by, const uniGrid2d< T >&grid) {
+void dyn2_Cr_Cs_MSE(T &Cs2, T &Cr, T* taux, T* tauy, T* tx, T* ty, T* bx, T* by, const T max_nu, const uniGrid2d< T >&grid) {
     T detA;
     T tt, bt, tb, bb;
     T taut, taub;
     T Cs4;
+    T epsilon = std::numeric_limits<T>::min();
 
     tt = integrate_xy(tx, ty, tx, ty, grid);
     bt = integrate_xy(bx, by, tx, ty, grid);
-    tb = bt;
     tb = integrate_xy(tx, ty, bx, by, grid);
     bb = integrate_xy(bx, by, bx, by, grid);
     taut = integrate_xy(taux, tauy, tx, ty, grid);
     taub = integrate_xy(taux, tauy, bx, by, grid);
 
-    detA = tt * bb - bt * tb;
+    // Equal to var(t)*var(b)*(1-corr(t,b)) >=0
+    // Consequnetly, we can add epsilon to avoid division by zero
+    // I think there is absolutely no way that b and t are perfectly correlated
+    detA = tt * bb - bt * tb + epsilon;
 
-    Cs2 = (+bb*taut - bt*taub) / detA;
+    Cs2 = min(max((+bb*taut - bt*taub) / detA, (T)0.0), max_nu);
     Cr  = min(max((-tb*taut + tt*taub) / detA, (T)0.0), (T)30.0);
+}
+
+template < typename T >
+void dyn2_Cr_Cs_Morinishi(T &Cs2, T &Cr, T* taux, T* tauy, T* tx, T* ty, T* bx, T* by, const T max_nu, const uniGrid2d< T >&grid) {
+    T detA;
+    T tt, bt, tb, bb;
+    T taut, taub;
+    T Cs4;
+    T epsilon = std::numeric_limits<T>::min();
+
+    tt = integrate_xy(tx, ty, tx, ty, grid);
+    tb = integrate_xy(tx, ty, bx, by, grid);
+    bb = integrate_xy(bx, by, bx, by, grid);
+    taut = integrate_xy(taux, tauy, tx, ty, grid);
+    taub = integrate_xy(taux, tauy, bx, by, grid);
+
+    // In Morinishi-Vasilyev method we first solve for eddy viscosity
+    // It is simply equivalent to DMM model
+    Cs2 = taut / (tt + epsilon);
+    Cs2 = min(max(Cs2, (T)0.0), max_nu);
+
+    // simple MSE method for remaining coefficient
+    Cr = (taub - Cs2 * tb) / (bb + epsilon);
+    Cr = min(max(Cr, (T)0.0), (T)30.0);
 }
 
 template < typename T >
