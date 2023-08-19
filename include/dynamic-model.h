@@ -44,6 +44,7 @@ struct dynamic_model
     T *txc, *tyc; // filtered model
     T *mx, *my; // model vector divided by "Smagorinsky" constant, in v and u points, correspondingly
     T *lm, *mm; // num. and den. for estimation of viscosity, in p point
+    T *l, *m; // num. and den. in Dynamic model in divergence formulation (Maulik2017)
     
     // Mixed model data
     T *ssmx, *ssmy; // ssm model on base level

@@ -16,6 +16,7 @@ void dynamic_model< T >::allocate_memory(const uniGrid2d< T >&grid)
     allocate(&txc, &tyc, grid.size);
     allocate(&mx, &my, grid.size);
     allocate(&lm, &mm, grid.size);
+    allocate(&l, &m, grid.size); // Maulik & San 2017
     
     allocate(&ssmx, &ssmy, grid.size); // for consistent output
     allocate(&hx, &hy, grid.size);     // for germano error
@@ -54,6 +55,7 @@ void dynamic_model< T >::clear()
     deallocate(txc, tyc);
     deallocate(mx, my);
     deallocate(lm, mm);
+    deallocate(l, m);
     
     deallocate(ssmx, ssmy);
     deallocate(hx, hy);
@@ -227,7 +229,7 @@ void dynamic_model< T >::compute_lx_ly(T* w, T* u, T* v, T* psi, const uniGrid2d
 template< typename T >
 void dynamic_model< T >::compute_bx_by(T* w, T* u, T* v, T* psi, const uniGrid2d< T >&grid)
 {
-    if (reynolds_backscatter && (averaging_method == dyn2 || averaging_method == dyn2_ZE))
+    if (reynolds_backscatter && (averaging_method == dyn2 || averaging_method == dyn2_ZE || averaging_method == dyn2_Morinishi))
     {
         T _Csim_back = (T)1.0;
         backscatter_ssm(bx, by, w, u, v, (T*)NULL, bf_width, (T)0.0, (T)0.0, _Csim_back, grid);
@@ -293,9 +295,11 @@ void dynamic_model< T >::update_viscosity(T* w, T* u, T* v, T* psi, T dt, bool s
     compute_mx_my(w, u, v, mul_C2, grid); // mx, my
     compute_bx_by(w, u, v, psi, grid); // bx, by if dyn2 
     
-    // Lx, Ly to account for ssm model
-    scal_prod(lm, Lx, Ly, mx, my, grid);
-    scal_prod(mm, mx, my, mx, my, grid);
+    // One-parameter dynamic model
+    if (averaging_method == averaging_global || averaging_method == clipping || averaging_method == lagrangian) {
+        scal_prod(lm, Lx, Ly, mx, my, grid);
+        scal_prod(mm, mx, my, mx, my, grid);
+    }
 
     // breaces for lagrangian case are needed because 
     // switch does not imply a new scope
@@ -332,11 +336,26 @@ void dynamic_model< T >::update_viscosity(T* w, T* u, T* v, T* psi, T dt, bool s
             }
     }
 
-    safe_division(Cs2_local, LM, MM, max_C2, grid);
+    if (averaging_method == averaging_global || averaging_method == clipping || averaging_method == lagrangian) {
+        safe_division(Cs2_local, LM, MM, max_C2, grid);
+    }
 
     if (reynolds_backscatter && averaging_method == dyn2) {
-        dyn2_Cr_Cs_MSE(Cs2_mean, Csim_back, Lx, Ly, mx, my, Bx, By, grid);
+        dyn2_Cr_Cs_MSE(Cs2_mean, Csim_back, Lx, Ly, mx, my, Bx, By, max_C2, grid);
         assign(Cs2_local, Cs2_mean, grid.size);
+    }
+
+    if (reynolds_backscatter && averaging_method == dyn2_Morinishi) {
+        dyn2_Cr_Cs_Morinishi(Cs2_mean, Csim_back, Lx, Ly, mx, my, Bx, By, max_C2, grid);
+        assign(Cs2_local, Cs2_mean, grid.size);
+    }
+
+    if (averaging_method == Maulik2017) {
+        divergence_vector(l, Lx, Ly, grid);
+        divergence_vector(m, mx, my, grid);
+        assign(LM, average_xy(l, m, grid), grid.size);
+        assign(MM, average_xy(m, m, grid), grid.size);
+        safe_division(Cs2_local, LM, MM, max_C2, grid);
     }
 
     if (reynolds_backscatter && averaging_method == dyn2_ZE) {
@@ -367,14 +386,14 @@ void dynamic_model< T >::update_viscosity(T* w, T* u, T* v, T* psi, T dt, bool s
     // ---- needed for backscatter and statistics ----- //
     mul_C2 = true;
     compute_mx_my(w, u, v, mul_C2, grid);
-    if (reynolds_backscatter && (averaging_method == dyn2 || averaging_method == dyn2_ZE)) {
+    if (reynolds_backscatter && (averaging_method == dyn2 || averaging_method == dyn2_ZE || averaging_method == dyn2_Morinishi)) {
         mul(bx, Csim_back, grid.size);
         mul(by, Csim_back, grid.size);
         mul(Bx, Csim_back, grid.size);
         mul(By, Csim_back, grid.size);
     }
     
-    if (reynolds_backscatter && (averaging_method != dyn2 && averaging_method != dyn2_ZE)) {
+    if (reynolds_backscatter && (averaging_method != dyn2 && averaging_method != dyn2_ZE && averaging_method != dyn2_Morinishi)) {
         Csim_back = (T)1.0;
         backscatter_ssm(bx, by, w, u, v, (T*)NULL, bf_width, (T)0.0, -(T)1.0, Csim_back, grid);
         Csim_back = compute_Cback(ssmx, ssmy, tx, ty, bx, by, w, psi, bf_width, grid);
