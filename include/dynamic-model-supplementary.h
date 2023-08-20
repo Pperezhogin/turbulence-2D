@@ -590,32 +590,6 @@ void laplacian(T* lapw, T* w, const uniGrid2d< T >& grid)
     }
 }
 
-// lxx, lyy - in p points
-// lxy - in w points
-// lx, ly -- in v and u points correspondingly
-template < typename T >
-void tensor_to_vector(T* lx, T* ly, T* lxx, T* lxy, T* lyy, const uniGrid2d< T >& grid)
-{
-    int i, j, idx;
-
-    grid.mpi_com.exchange_halo(lxx, lyy,
-        grid.nx, grid.ny, grid.gcx, grid.gcy,
-        1, 1, 1, 1);
-    grid.mpi_com.exchange_halo(lxy,
-        grid.nx, grid.ny, grid.gcx, grid.gcy,
-        1, 1, 1, 1);
-
-    for (i = grid.gcx; i < grid.nx - grid.gcx; i++)
-    {
-        idx = i * grid.ny + grid.gcy;
-        for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
-            
-            lx[idx] = (lxy[idx + grid.ny] - lxy[idx]) * grid.dxi - (lxx[idx] - lxx[idx - 1]) * grid.dyi;
-            ly[idx] = (lyy[idx] - lyy[idx - grid.ny]) * grid.dxi - (lxy[idx + 1] - lxy[idx]) * grid.dyi;
-        }
-    }
-}
-
 // dw/dt = ... - div(tx,ty)
 template < typename T >
 void divergence_vector(T* wim, T* tx, T* ty, const uniGrid2d< T >& grid)
@@ -928,14 +902,14 @@ void compute_leonard_tensor(T* lxx, T* lxy, T* lyy, T* u, T* v, const T test_wid
     mul(vv, v_center, v_center, grid.size);
     mul(uv, u_corner, v_corner, grid.size);
 
-    apply_filter(lxx, uu, test_width, (T)0.0, grid);
-    apply_filter(lxy, uv, test_width, (T)0.0, grid);
-    apply_filter(lyy, vv, test_width, (T)0.0, grid);
+    apply_filter(lxx, uu, test_width, grid);
+    apply_filter(lxy, uv, test_width, grid);
+    apply_filter(lyy, vv, test_width, grid);
 
     // ----- second part of Leonard tensor ---- //
 
-    apply_filter(uc, u, test_width, (T)0.0, grid);
-    apply_filter(vc, u, test_width, (T)0.0, grid);
+    apply_filter(uc, u, test_width, grid);
+    apply_filter(vc, u, test_width, grid);
 
     u_to_p(u_center, uc, grid);
     v_to_p(v_center, vc, grid);
@@ -1033,7 +1007,7 @@ void compute_ngm_vector_conservative(T* lx, T* ly, T* w, T* u, T* v, const T tes
     p_to_w(sxx_w, sxx, grid);
     mul(lxy, sxx_w, wc, grid.size);
     
-    tensor_to_vector(lx, ly, lxx, lxy, lyy, grid);
+    curl_tensor(lx, ly, lxx, lxy, lyy, grid);
 
     T filter_width = sqrt(sqr(test_width) + sqr(base_width));   
     T C0 = sqr(filter_width * grid.dx) / (T)12.0;
@@ -1281,6 +1255,23 @@ void lap_UV_model(T* fx, T* fy, T* u, T* v, T* nu_p, const uniGrid2d< T >& grid)
 
     // divergence with minus, i.e. velocity tendency
     divergence_tensor(fx, fy, txx, txy, tyy, grid);
+}
+
+template < typename T >
+void lap_UV_smagorinsky_model(T* mxx, T* mxy, T*myy, T* u, T* v, const T mix_length, const uniGrid2d< T >& grid)
+{   
+    T sxx[grid.size], sxy[grid.size], syy[grid.size];
+    T S_center[grid.size], S_corner[grid.size];
+    
+    strain_tensor(sxx, sxy, syy, u, v, grid);
+    compute_S(S_center, sxx, sxy, syy, grid);
+    p_to_w(S_corner, S_center, grid);
+
+    for (int i = 0; i < grid.size; i++) {
+        mxx[i] = - 2.0 * sqr(mix_length) * S_center[i] * sxx[i];
+        myy[i] = - 2.0 * sqr(mix_length) * S_center[i] * syy[i];
+        mxy[i] = - 2.0 * sqr(mix_length) * S_corner[i] * sxy[i];
+    }
 }
 
 template< typename T >

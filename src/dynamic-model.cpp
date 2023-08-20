@@ -353,8 +353,12 @@ void dynamic_model< T >::update_viscosity(T* w, T* u, T* v, T* psi, T dt, bool s
     if (averaging_method == Maulik2017) {
         compute_divergence_vector(l, Lx, Ly, grid);
         compute_divergence_vector(m, mx, my, grid);
-        mul(LM, l, m, grid.size);
-        mul(MM, m, m, grid.size);
+
+        mul(lm, l, m, grid.size);
+        mul(mm, m, m, grid.size);
+        assign(LM, average_xy(lm, grid), grid.size);
+        assign(MM, average_xy(mm, grid), grid.size);
+
         safe_division(Cs2_local, LM, MM, max_C2, grid);
     }
 
@@ -631,15 +635,15 @@ void dynamic_model< T >::statistics(T* psi, T* w, T* u, T* v, T dt, const uniGri
             if (Esub[idx] < - small_eps) {
                 E_neg += (T)1.0;
             }
-            if (averaging_method == averaging_global) {
-                pure_diss += max(lm[idx], (T)0.0);
-                pure_back -= min(lm[idx], (T)0.0);
-                if (lm[idx] < small_eps)
-                    back_points += (T)1.0;
-            } else {
+            if (averaging_method == lagrangian || averaging_method == clipping) {
                 pure_diss += max(LM[idx], (T)0.0);
                 pure_back -= min(LM[idx], (T)0.0);    
                 if (LM[idx] < small_eps)
+                    back_points += (T)1.0;
+            } else {
+                pure_diss += max(lm[idx], (T)0.0);
+                pure_back -= min(lm[idx], (T)0.0);
+                if (lm[idx] < small_eps)
                     back_points += (T)1.0;
             }
         }
