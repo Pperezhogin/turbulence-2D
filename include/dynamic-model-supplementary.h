@@ -18,6 +18,7 @@ using namespace nse;
 enum {lap, bilap, lap_leith, lap_smag, bilap_smag, lap_w_smag, bilap_w_smag, bilap_leith}; // viscosity models
 enum {averaging_global, clipping, lagrangian, dyn2, dyn2_ZE, dyn2_Morinishi, Maulik2017}; // averaging methods. dyn2 stands for MSE of 2 constants. Applicable only for reynolds
 enum {mixed_ssm, mixed_ngm};
+enum {dyn_momentum_flux, dyn_momentum_forcing, dyn_vorticity_flux, dyn_vorticity_forcing};
 
 //////////////////////////////////////////////////////////////
 //////////// -------- exchanges inside --------- /////////////
@@ -636,6 +637,27 @@ void divergence_vector(T* wim, T* tx, T* ty, const uniGrid2d< T >& grid)
     }
 }
 
+// div(tx,ty)
+template < typename T >
+void compute_divergence_vector(T* wim, T* tx, T* ty, const uniGrid2d< T >& grid)
+{
+    int i, j, idx;
+
+    grid.mpi_com.exchange_halo(tx, ty,
+        grid.nx, grid.ny, grid.gcx, grid.gcy,
+        1, 1, 1, 1);
+
+    for (i = grid.gcx; i < grid.nx - grid.gcx; i++)
+    {
+        idx = i * grid.ny + grid.gcy;
+        for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
+
+            wim[idx] =   (tx[idx] - tx[idx - grid.ny]) * grid.dxi
+                        + (ty[idx] - ty[idx - 1      ]) * grid.dyi;
+        }
+    }
+}
+
 template < typename T >
 void divergence_tensor(T* fx, T* fy, T* txx, T* txy, T* tyy, const uniGrid2d< T >& grid)
 {
@@ -659,6 +681,40 @@ void divergence_tensor(T* fx, T* fy, T* txx, T* txy, T* tyy, const uniGrid2d< T 
             
             fy[idx] = - (tyy[idx] - tyy[idx - 1]) * grid.dyi
                       - (txy[idx + grid.ny] - txy[idx]) * grid.dxi;
+        }
+    }
+}
+
+// Returns vorticity fluxes
+// txx, tyy - center points
+// txy - corner points
+// tx - v points
+// ty - u points
+// tx = d/dx(txy) - d/dy(txx)
+// ty = d/dx(dyy) - d/dy(txy)
+template < typename T >
+void curl_tensor(T* tx, T* ty, T* txx, T* txy, T* tyy, const uniGrid2d< T >& grid)
+{
+    int i, j, idx;
+
+    grid.mpi_com.exchange_halo(txx, tyy,
+        grid.nx, grid.ny, grid.gcx, grid.gcy,
+        1, 1, 1, 1);
+
+    grid.mpi_com.exchange_halo(txy,
+        grid.nx, grid.ny, grid.gcx, grid.gcy,
+        1, 1, 1, 1);
+
+    for (i = grid.gcx; i < grid.nx - grid.gcx; i++)
+    {
+        idx = i * grid.ny + grid.gcy;
+        for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
+
+            tx[idx] = (txy[idx + grid.ny] - txy[idx]) * grid.dxi
+                    - (txx[idx] - txx[idx - 1]) * grid.dyi;
+
+            ty[idx] = (tyy[idx] - tyy[idx - grid.ny]) * grid.dxi
+                    - (txy[idx + 1] - txy[idx]) * grid.dyi;
         }
     }
 }

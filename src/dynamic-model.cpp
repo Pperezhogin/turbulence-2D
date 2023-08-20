@@ -351,10 +351,10 @@ void dynamic_model< T >::update_viscosity(T* w, T* u, T* v, T* psi, T dt, bool s
     }
 
     if (averaging_method == Maulik2017) {
-        divergence_vector(l, Lx, Ly, grid);
-        divergence_vector(m, mx, my, grid);
-        assign(LM, average_xy(l, m, grid), grid.size);
-        assign(MM, average_xy(m, m, grid), grid.size);
+        compute_divergence_vector(l, Lx, Ly, grid);
+        compute_divergence_vector(m, mx, my, grid);
+        mul(LM, l, m, grid.size);
+        mul(MM, m, m, grid.size);
         safe_division(Cs2_local, LM, MM, max_C2, grid);
     }
 
@@ -709,7 +709,7 @@ void dynamic_model< T >::set_simple_model(const int _viscosity_model, const T Cs
 
 template< typename T >
 T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width, 
-    bool clipping, const uniGrid2d< T >& grid)
+    bool clipping, int averaging_method, const uniGrid2d< T >& grid)
 {
     /*
     Represents dynamic model for momentum flux
@@ -732,6 +732,7 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
     // Smagorinsky model on the base level
     strain_tensor(sxx, sxy, syy, u, v, grid);
     compute_S(S_center, sxx, sxy, syy, grid);
+    //assign(S_center, (T)1.0, grid.size);
     p_to_w(S_corner, S_center, grid);
 
     T mix_length = base_width * grid.dx;
@@ -752,6 +753,7 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
 
     strain_tensor(sxx, sxy, syy, uf, vf, grid);
     compute_S(S_center, sxx, sxy, syy, grid);
+    //assign(S_center, (T)1.0, grid.size);
     p_to_w(S_corner, S_center, grid);
 
     T tb_width = sqrt(sqr(test_width) + sqr(base_width));
@@ -762,8 +764,51 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
         Mxy[i] = - 2.0 * sqr(mix_length) * S_corner[i] * sxy[i] - mxyf[i];
     }
 
-    scal_prod_tensors(LM, lxx, lxy, lyy, Mxx, Mxy, Myy, grid);
-    scal_prod_tensors(MM, Mxx, Mxy, Myy, Mxx, Mxy, Myy, grid);
+    if (averaging_method == dyn_momentum_flux) {
+        scal_prod_tensors(LM, lxx, lxy, lyy, Mxx, Mxy, Myy, grid);
+        scal_prod_tensors(MM, Mxx, Mxy, Myy, Mxx, Mxy, Myy, grid);
+    }
+    
+    if (averaging_method == dyn_momentum_forcing) {
+        T lx[grid.size], ly[grid.size]; // momentum forcing
+        T mx[grid.size], my[grid.size];
+        // Compute momentum forcing from the momentum flux
+        divergence_tensor(lx, ly, lxx, lxy, lyy, grid);
+        divergence_tensor(mx, my, Mxx, Mxy, Myy, grid);
+        // We swap x-y dimensions because scal_prod
+        // is written for vorticity fluxes which 
+        // are located in v and u points, correspondingly
+        scal_prod(LM, ly, lx, my, mx, grid);
+        scal_prod(MM, my, mx, my, mx, grid);
+    }
+
+    if (averaging_method == dyn_vorticity_flux) {
+        T lx[grid.size], ly[grid.size]; // vorticity flux
+        T mx[grid.size], my[grid.size];
+
+        // Compute vorticity flux from the momentum flux
+        curl_tensor(lx, ly, lxx, lxy, lyy, grid);
+        curl_tensor(mx, my, Mxx, Mxy, Myy, grid);
+
+        scal_prod(LM, lx, ly, mx, my, grid);
+        scal_prod(MM, mx, my, mx, my, grid);
+    }
+
+    if (averaging_method == dyn_vorticity_forcing) {
+        T lx[grid.size], ly[grid.size];
+        T mx[grid.size], my[grid.size];
+        T l[grid.size], m[grid.size];
+
+        // Compute vorticity flux from the momentum flux
+        curl_tensor(lx, ly, lxx, lxy, lyy, grid);
+        curl_tensor(mx, my, Mxx, Mxy, Myy, grid);
+
+        compute_divergence_vector(l, lx, ly, grid);
+        compute_divergence_vector(m, mx, my, grid);
+
+        mul(LM, l, m, grid.size);
+        mul(MM, m, m, grid.size);
+    }
 
     T epsilon = std::numeric_limits<T>::min();
     T Cs2_mean;
@@ -809,6 +854,6 @@ template struct dynamic_model< float >;
 template struct dynamic_model< double >;
 
 template float DSM_Pawar(float* wim, float* u, float* v, float test_width, 
-    float base_width, bool clipping, const uniGrid2d< float >& grid);
+    float base_width, bool clipping, int averaging_method, const uniGrid2d< float >& grid);
 template double DSM_Pawar(double* wim, double* u, double* v, double test_width, 
-    double base_width, bool clipping, const uniGrid2d< double >& grid);
+    double base_width, bool clipping, int averaging_method, const uniGrid2d< double >& grid);

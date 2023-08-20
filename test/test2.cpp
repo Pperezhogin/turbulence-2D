@@ -248,6 +248,16 @@ int main(int argc, char** argv)
 	if (mpi_rank == 0) printf("Dynamic global models: \n");
 	launch_all_models();
 
+	// ----------- Dynamic models global ----------- //
+	averaging_method = Maulik2017;
+	mixed_model = false;
+	reynolds_backscatter = false;
+    negvisc_backscatter = false;
+	adm_model = false;
+	
+	if (mpi_rank == 0) printf("Dynamic global models, Maulik2017: \n");
+	launch_all_models();
+
 	// ----------- Mixed models global ----------- //
 	averaging_method = averaging_global;
 	mixed_model = true;
