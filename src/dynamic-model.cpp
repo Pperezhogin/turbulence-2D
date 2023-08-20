@@ -84,7 +84,7 @@ template< typename T >
 void dynamic_model< T >::init(int _viscosity_model,
 int _averaging_method, bool _mixed_model, int _mixed_type, bool _negvisc_backscatter, bool _reynolds_backscatter, bool _adm_model,
 int _adm_order, T _tf_width, T _bf_width, 
-int _filter_iterations, T _lagrangian_time, T dt, const uniGrid2d< T >&grid, bool alloc_memory)
+int _filter_iterations, int _leonard_scheme, T _lagrangian_time, T dt, const uniGrid2d< T >&grid, bool alloc_memory)
 {
     viscosity_model   = _viscosity_model;
     averaging_method  = _averaging_method;
@@ -96,6 +96,7 @@ int _filter_iterations, T _lagrangian_time, T dt, const uniGrid2d< T >&grid, boo
     reynolds_backscatter = _reynolds_backscatter;
     adm_model = _adm_model;
     adm_order = _adm_order;
+    leonard_scheme = _leonard_scheme;
 
     if (negvisc_backscatter) {
         if (viscosity_model != bilap_smag && viscosity_model != bilap) {
@@ -161,7 +162,7 @@ template< typename T >
 void dynamic_model< T >::compute_lx_ly(T* w, T* u, T* v, T* psi, const uniGrid2d< T >&grid)
 {
     // compute leonard vector
-    compute_leonard_vector(lx, ly, w, u, v, tf_width, (T)0.0, (T)1.0, grid); // computes leonard vector for Germano identity  
+    compute_leonard_vector(lx, ly, w, u, v, tf_width, (T)0.0, (T)1.0, grid, leonard_scheme); // computes leonard vector for Germano identity  
 
     memcpy(Lx, lx, sizeof(T)*grid.size);
     memcpy(Ly, ly, sizeof(T)*grid.size);

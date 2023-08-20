@@ -19,6 +19,7 @@ enum {lap, bilap, lap_leith, lap_smag, bilap_smag, lap_w_smag, bilap_w_smag, bil
 enum {averaging_global, clipping, lagrangian, dyn2, dyn2_ZE, dyn2_Morinishi, Maulik2017}; // averaging methods. dyn2 stands for MSE of 2 constants. Applicable only for reynolds
 enum {mixed_ssm, mixed_ngm};
 enum {dyn_momentum_flux, dyn_momentum_forcing, dyn_vorticity_flux, dyn_vorticity_forcing};
+enum {Leonard_PV_Z_scheme, Leonard_PV_E_scheme};
 
 //////////////////////////////////////////////////////////////
 //////////// -------- exchanges inside --------- /////////////
@@ -833,27 +834,56 @@ void estimate_sgs_ke(T* ke_estimate, T* w, T* u, T* v, T filter_width, const uni
     }
 }
 
+template < typename T >
+void Z_scheme(T* _uw, T* _vw, T* _w, T* _u, T* _v, const uniGrid2d< T >& grid){
+    /*
+    https://journals.ametsoc.org/view/journals/atsc/32/4/1520-0469_1975_032_0680_tdofdm_2_0_co_2.xml
+    Eq. (4) in Sadourny 1975
+    */
+    T u_v[grid.size], v_u[grid.size], w_u[grid.size], w_v[grid.size];
+    u_to_v(u_v, _u, grid);
+    v_to_u(v_u, _v, grid);
+    w_to_u(w_u, _w, grid);
+    w_to_v(w_v, _w, grid);   
+    mul(_uw, u_v, w_v, grid.size);
+    mul(_vw, v_u, w_u, grid.size);
+}
+
+template < typename T >
+void E_scheme(T* _uw, T* _vw, T* _w, T* _u, T* _v, const uniGrid2d< T >& grid){
+    /*
+    https://journals.ametsoc.org/view/journals/atsc/32/4/1520-0469_1975_032_0680_tdofdm_2_0_co_2.xml
+    Eq. (3) in Sadourny 1975
+    */
+    T u_w[grid.size], v_w[grid.size];
+    T uw_w[grid.size], vw_w[grid.size];
+    u_to_w(u_w, _u, grid);
+    v_to_w(v_w, _v, grid);
+
+    mul(uw_w, u_w, _w, grid.size);
+    mul(vw_w, v_w, _w, grid.size);
+
+    w_to_v(_uw, uw_w, grid);
+    w_to_u(_vw, vw_w, grid);
+}
+
 // L = filter(uw) - filter(u)filter(w)
 // lx in v point, ly in u point
 // if base_width > 1.0, then two filters applied, otherwise only test filter
 template < typename T >
-void compute_leonard_vector(T* lx, T* ly, T* w, T* u, T* v, const T test_width, const T base_width, const T Csim, const uniGrid2d< T >& grid)
+void compute_leonard_vector(T* lx, T* ly, T* w, T* u, T* v, const T test_width, const T base_width, const T Csim, const uniGrid2d< T >& grid, int leonard_scheme = Leonard_PV_Z_scheme)
 {
-    T u_v[grid.size], v_u[grid.size], w_u[grid.size], w_v[grid.size], uw[grid.size], vw[grid.size];
+    T uw[grid.size], vw[grid.size];
     T wc[grid.size], uc[grid.size], vc[grid.size];
     
     // ----- first part of Leonard vector ---- //
-    
-    // u,v in lx, ly points
-    u_to_v(u_v, u, grid);
-    v_to_u(v_u, v, grid);
 
-    // w in lx, ly points
-    w_to_u(w_u, w, grid);
-    w_to_v(w_v, w, grid);
-    
-    mul(uw, u_v, w_v, grid.size);
-    mul(vw, v_u, w_u, grid.size);
+    if (leonard_scheme == Leonard_PV_Z_scheme)
+        Z_scheme(uw, vw, w, u, v, grid);
+    else if (leonard_scheme == Leonard_PV_E_scheme)
+        E_scheme(uw, vw, w, u, v, grid);
+    else
+        assert(false);
     
     apply_filter(lx, uw, test_width, base_width, grid);
     apply_filter(ly, vw, test_width, base_width, grid);
@@ -863,15 +893,13 @@ void compute_leonard_vector(T* lx, T* ly, T* w, T* u, T* v, const T test_width, 
     apply_filter(wc, w, test_width, base_width, grid);
     apply_filter(uc, u, test_width, base_width, grid);
     apply_filter(vc, v, test_width, base_width, grid);
-    
-    u_to_v(u_v, uc, grid);
-    v_to_u(v_u, vc, grid);
 
-    w_to_u(w_u, wc, grid);
-    w_to_v(w_v, wc, grid);
-    
-    mul(uw, u_v, w_v, grid.size);
-    mul(vw, v_u, w_u, grid.size);
+    if (leonard_scheme == Leonard_PV_Z_scheme)
+        Z_scheme(uw, vw, wc, uc, vc, grid);
+    else if (leonard_scheme == Leonard_PV_E_scheme)
+        E_scheme(uw, vw, wc, uc, vc, grid);
+    else
+        assert(false);
     
     // ---------- full Leonard vector -------- //
     

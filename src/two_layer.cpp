@@ -41,10 +41,10 @@ bool model_init()
     
     dyn_model1.init(viscosity_model, averaging_method, mixed_model, mixed_ssm, negvisc_backscatter, reynolds_backscatter, 
 	false, 0, tf_width, bf_width, 
-		filter_iterations, lagrangian_time, dt, grid);
+		filter_iterations, Leonard_PV_Z_scheme, lagrangian_time, dt, grid);
 	dyn_model2.init(viscosity_model, averaging_method, mixed_model, mixed_ssm, negvisc_backscatter, reynolds_backscatter, 
 	false, 0, tf_width, bf_width, 
-		filter_iterations, lagrangian_time, dt, grid);
+		filter_iterations, Leonard_PV_Z_scheme, lagrangian_time, dt, grid);
     
 	balance.init((Real)1.0, grid);
 

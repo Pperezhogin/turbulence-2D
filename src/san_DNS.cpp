@@ -36,19 +36,19 @@ timeSeries &series, int npoints)
 
 	dyn_lap.init(lap_smag, averaging_global, false, mixed_ssm, false, false, 
 	false, 2, filter_width, filter_width, 
-		1, (Real)1.0, dt, grid, false);
+		1, Leonard_PV_Z_scheme, (Real)1.0, dt, grid, false);
 
 	dyn_bilap.init(bilap_smag, averaging_global, false, mixed_ssm, false, false, 
 	false, 2, filter_width, filter_width, 
-		1, (Real)1.0, dt, grid, false);
+		1, Leonard_PV_Z_scheme, (Real)1.0, dt, grid, false);
 
 	dyn_ssm_bilap.init(bilap_smag, averaging_global, true, mixed_ssm, false, false, 
 	false, 2, filter_width, filter_width, 
-		1, (Real)1.0, dt, grid, false);
+		1, Leonard_PV_Z_scheme, (Real)1.0, dt, grid, false);
 
 	dyn_ssm_bilap_keb.init(bilap_smag, averaging_global, true, mixed_ssm, false, true, 
 	false, 2, filter_width, filter_width, 
-		1, (Real)1.0, dt, grid, false);
+		1, Leonard_PV_Z_scheme, (Real)1.0, dt, grid, false);
 
 }
 

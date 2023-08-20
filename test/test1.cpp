@@ -84,13 +84,13 @@ void test_Smagorinsky_model(Real* w, Real* u, Real* v, const uniGrid2d< Real >& 
     if(grid.mpi_com.rank==0) printf("Smagorinsky: Relative Linf error in vorticity flux divergence = %E \n", err);
 }
 
-void test_Leonard_stress(Real* w, Real* u, Real* v, const uniGrid2d< Real >& grid){
+void test_Leonard_stress(Real* w, Real* u, Real* v, const uniGrid2d< Real >& grid, int scheme = 0){
     Real lx[grid.size], ly[grid.size];
     Real Lxx[grid.size], Lxy[grid.size], Lyy[grid.size];
     Real Lx[grid.size], Ly[grid.size];
     Real L[grid.size], l[grid.size];
     
-    compute_leonard_vector(lx, ly, w, u, v, sqrt(6.0), 0.0, 1.0, grid);
+    compute_leonard_vector(lx, ly, w, u, v, sqrt(6.0), 0.0, 1.0, grid, scheme);
     compute_divergence_vector(l, lx, ly, grid);
 
     compute_leonard_tensor(Lxx, Lxy, Lyy, u, v, sqrt(6.0), grid);
@@ -100,11 +100,11 @@ void test_Leonard_stress(Real* w, Real* u, Real* v, const uniGrid2d< Real >& gri
     Real err, corr;
     err = error_relative(Lx, lx, grid) + error_relative(Ly, ly, grid);
     corr = (correlation(Lx, lx, grid) + correlation(Ly, ly, grid)) * 0.5;
-    if(grid.mpi_com.rank==0) printf("Leonard: In vorticity flux Linf error = %.3f, correlation =  %.3f \n", err, corr);
+    if(grid.mpi_com.rank==0) printf("Leonard %i: In vorticity flux Linf error = %.3f, correlation =  %.3f \n", scheme, err, corr);
 
     err = error_relative(L, l, grid);
     corr = correlation(L, l, grid);
-    if(grid.mpi_com.rank==0) printf("Leonard: In vorticity flux divergence Linf error = %.3f, correlation =  %.3f \n", err, corr);
+    if(grid.mpi_com.rank==0) printf("Leonard %i: In vorticity flux divergence Linf error = %.3f, correlation =  %.3f \n", scheme, err, corr);
 }
 
 void test_momentum_vorticity_transport(Real *w, Real* u, Real* v, bool trace_free, int scheme, const uniGrid2d< Real >& grid) {
@@ -281,7 +281,8 @@ int main(int argc, char** argv)
     if (grid.mpi_com.rank == 0) printf("\nTest on random noise: \n");
     test_tensor_differentiation(w, u, v, grid);
     test_Smagorinsky_model(w, u, v, grid);
-    test_Leonard_stress(w, u, v, grid);
+    test_Leonard_stress(w, u, v, grid, 0);
+    test_Leonard_stress(w, u, v, grid, 1);
     test_momentum_vorticity_transport(w, u, v, true, 0, grid);
     test_momentum_vorticity_transport(w, u, v, false, 0, grid);
     // test_momentum_vorticity_transport(w, u, v, true, 1, grid);

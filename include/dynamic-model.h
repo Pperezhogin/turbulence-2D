@@ -27,6 +27,7 @@ struct dynamic_model
     T tb_width; // width of product test * base filters
     int filter_iterations; // Number of filter iterations in lm and mm in clipping method
     T max_C2; // maximum smagorinsky constant, for stability
+    int leonard_scheme;
 
     // Lagrangian model data
     T lagrangian_time; // lagrangian time in |S|^-1 units. // It is assumed that 
@@ -99,7 +100,7 @@ struct dynamic_model
         void init(int _viscosity_model,
             int _averaging_method, bool _mixed_model, int _mixed_type, bool _negvisc_backscatter, bool _reynolds_backscatter, bool _adm_model,
             int _adm_order, T _tf_width, T _bf_width, 
-            int _filter_iterations, T _lagrangian_time, T dt, const uniGrid2d< T >&grid, bool alloc_memory=true);
+            int _filter_iterations, int _leonard_scheme, T _lagrangian_time, T dt, const uniGrid2d< T >&grid, bool alloc_memory=true);
         void clear();
         void allocate_memory(const uniGrid2d< T >&grid);
         void init_lagrangian_eq(T* w, T* u, T* v, T* psi, const uniGrid2d< T >&grid);

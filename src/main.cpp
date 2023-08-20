@@ -44,7 +44,7 @@ bool model_init()
     
     dyn_model.init(viscosity_model, averaging_method, mixed_model, mixed_type, negvisc_backscatter, reynolds_backscatter, 
 	adm_model, adm_order, tf_width, bf_width, 
-		filter_iterations, lagrangian_time, dt, grid);
+		filter_iterations, Leonard_PV_Z_scheme, lagrangian_time, dt, grid);
     
 	balance.init((Real)1.0, grid);
 
