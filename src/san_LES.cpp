@@ -190,7 +190,7 @@ bool advance_nse_eq_runge_kutta()
     	#endif
 
 		#ifdef DYNAMIC_MODEL_PAWAR
-			dyn_model.Cs2_mean = DSM_Pawar(wim, U, V, Pawar_test_width, Pawar_base_width, Pawar_clipping, Pawar_averaging, grid);
+			dyn_model.Cs2_mean = DSM_Pawar(w, U, V, Pawar_test_width, Pawar_base_width, Pawar_clipping, Pawar_averaging, grid);
 			dyn_model.Cs = sqrt(dyn_model.Cs2_mean);
 		#endif
         

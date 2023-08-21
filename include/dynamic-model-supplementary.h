@@ -28,6 +28,8 @@ enum {Leonard_PV_Z_scheme, Leonard_PV_E_scheme, Leonard_UV_scheme};
 
 // -- averaging methods -- //
 // pointwise scalar product of vectors, result in p point
+// lx, sx are in v points
+// ly, sy are in u points
 template < typename T >
 void scal_prod(T* ls, T* lx, T* ly, T* sx, T* sy, const uniGrid2d< T >& grid)
 {

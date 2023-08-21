@@ -39,8 +39,8 @@ using namespace nse;
 //#define AD_FILTERING_ON
 
 //#define DIFFUSION
-#define DYNAMIC_MODEL
-//#define DYNAMIC_MODEL_PAWAR
+//#define DYNAMIC_MODEL
+#define DYNAMIC_MODEL_PAWAR
 //#define SIMPLE_MODEL
 //#define MEAN_FLOW
 

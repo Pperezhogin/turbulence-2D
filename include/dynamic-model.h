@@ -121,5 +121,5 @@ struct dynamic_model
 };
 
 template < typename T >
-	T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width, 
+	T DSM_Pawar(T* w, T* u, T* v, T test_width, T base_width, 
     bool clipping, int averaging_method, const uniGrid2d< T >& grid);

@@ -722,7 +722,7 @@ void dynamic_model< T >::set_simple_model(const int _viscosity_model, const T Cs
 }
 
 template< typename T >
-T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width, 
+T DSM_Pawar(T* w, T* u, T* v, T test_width, T base_width, 
     bool clipping, int averaging_method, const uniGrid2d< T >& grid)
 {
     /*
@@ -738,9 +738,14 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
     T mxxf[grid.size], myyf[grid.size], mxyf[grid.size];
     T Mxx[grid.size], Myy[grid.size], Mxy[grid.size];
     T LM[grid.size], MM[grid.size];
+    T lx[grid.size], ly[grid.size];
 
-    // Trace-free Leonard stress
-    compute_leonard_tensor(lxx, lxy, lyy, u, v, test_width, grid);
+    if (averaging_method == dyn_momentum_flux || averaging_method == dyn_momentum_forcing) {
+        // Trace-free Leonard stress
+        compute_leonard_tensor(lxx, lxy, lyy, u, v, test_width, grid);
+    } else if (averaging_method == dyn_vorticity_flux || averaging_method == dyn_vorticity_forcing){
+        compute_leonard_vector(lx, ly, w, u, v, test_width, (T)0.0, (T)1.0, grid, Leonard_PV_Z_scheme);
+    }
 
     T mix_length = base_width * grid.dx;
     lap_UV_smagorinsky_model(mxx, mxy, myy, u, v, mix_length, grid);
@@ -768,7 +773,10 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
     }
     
     if (averaging_method == dyn_momentum_forcing) {
-        T lx[grid.size], ly[grid.size]; // momentum forcing
+        // Note that according to 
+        // Vector level identity for dynamic subgrid scale modeling in large eddy simulation
+        // Trace needs to be removed (as we does)
+
         T mx[grid.size], my[grid.size];
         // Compute momentum forcing from the momentum flux
         divergence_tensor(lx, ly, lxx, lxy, lyy, grid);
@@ -781,11 +789,8 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
     }
 
     if (averaging_method == dyn_vorticity_flux) {
-        T lx[grid.size], ly[grid.size]; // vorticity flux
         T mx[grid.size], my[grid.size];
 
-        // Compute vorticity flux from the momentum flux
-        curl_tensor(lx, ly, lxx, lxy, lyy, grid);
         curl_tensor(mx, my, Mxx, Mxy, Myy, grid);
 
         scal_prod(LM, lx, ly, mx, my, grid);
@@ -793,12 +798,9 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
     }
 
     if (averaging_method == dyn_vorticity_forcing) {
-        T lx[grid.size], ly[grid.size];
         T mx[grid.size], my[grid.size];
         T l[grid.size], m[grid.size];
 
-        // Compute vorticity flux from the momentum flux
-        curl_tensor(lx, ly, lxx, lxy, lyy, grid);
         curl_tensor(mx, my, Mxx, Mxy, Myy, grid);
 
         compute_divergence_vector(l, lx, ly, grid);
@@ -810,10 +812,10 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
 
     T epsilon = std::numeric_limits<T>::min();
     T Cs2_mean;
-    Cs2_mean = min(integrate_xy(LM, grid) / (integrate_xy(MM, grid) + epsilon), (T)1.0);
+    Cs2_mean = min(average_xy(LM, grid) / (average_xy(MM, grid) + epsilon), (T)1.0);
     
     if (Cs2_mean < (T)0.0){
-        printf("Mean value of Cs2<0; Mean value will be clipped to zero\n");
+        printf("Mean value of Cs2<0\n");
     }
 
     Cs2_mean = max(Cs2_mean, (T)0.0);
@@ -823,27 +825,8 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
         for (int i = 0; i < grid.size; i++) {
             LM[i] = max(LM[i], (T)0.0);
         }
-        Cs2_mean = min(integrate_xy(LM, grid) / (integrate_xy(MM, grid) + epsilon), (T)1.0);
+        Cs2_mean = min(average_xy(LM, grid) / (average_xy(MM, grid) + epsilon), (T)1.0);
     }
-
-    // Multiply base-level model by the smagorinsky constant
-    for (int i = 0; i < grid.size; i++) {
-        mxx[i] *= Cs2_mean;
-        mxy[i] *= Cs2_mean;
-        myy[i] *= Cs2_mean;
-    }
-
-    // Compute forcing in momentum equation
-    T fx[grid.size], fy[grid.size];
-
-    // minus is already included
-    divergence_tensor(fx, fy, mxx, mxy, myy, grid);
-
-    T vorticity_forcing[grid.size];
-
-    velocity_to_vorticity(vorticity_forcing, fx, fy, grid);
-
-    update(wim, (T)1.0, vorticity_forcing, grid.size);
 
     return Cs2_mean;
 }
@@ -851,7 +834,7 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
 template struct dynamic_model< float >;
 template struct dynamic_model< double >;
 
-template float DSM_Pawar(float* wim, float* u, float* v, float test_width, 
+template float DSM_Pawar(float* w, float* u, float* v, float test_width, 
     float base_width, bool clipping, int averaging_method, const uniGrid2d< float >& grid);
-template double DSM_Pawar(double* wim, double* u, double* v, double test_width, 
+template double DSM_Pawar(double* w, double* u, double* v, double test_width, 
     double base_width, bool clipping, int averaging_method, const uniGrid2d< double >& grid);
