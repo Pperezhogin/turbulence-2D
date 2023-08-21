@@ -5,6 +5,7 @@
 #include "dynamic-model-supplementary.h"
 #include <math.h>
 #include <stdio.h>
+#include "nse-out2d.h"
 
 using namespace nse;
 

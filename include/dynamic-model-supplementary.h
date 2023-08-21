@@ -15,11 +15,11 @@
 
 using namespace nse;
 
-enum {lap, bilap, lap_leith, lap_smag, bilap_smag, lap_w_smag, bilap_w_smag, bilap_leith}; // viscosity models
+enum {lap, bilap, lap_leith, lap_smag, bilap_smag, lap_w_smag, bilap_w_smag, bilap_leith, lap_UV_smag, lap_UV}; // viscosity models
 enum {averaging_global, clipping, lagrangian, dyn2, dyn2_ZE, dyn2_Morinishi, Maulik2017}; // averaging methods. dyn2 stands for MSE of 2 constants. Applicable only for reynolds
 enum {mixed_ssm, mixed_ngm};
 enum {dyn_momentum_flux, dyn_momentum_forcing, dyn_vorticity_flux, dyn_vorticity_forcing};
-enum {Leonard_PV_Z_scheme, Leonard_PV_E_scheme};
+enum {Leonard_PV_Z_scheme, Leonard_PV_E_scheme, Leonard_UV_scheme};
 
 //////////////////////////////////////////////////////////////
 //////////// -------- exchanges inside --------- /////////////
@@ -867,6 +867,27 @@ void E_scheme(T* _uw, T* _vw, T* _w, T* _u, T* _v, const uniGrid2d< T >& grid){
     w_to_u(_vw, vw_w, grid);
 }
 
+template < typename T >
+void UV_scheme(T* uu, T* uv, T* vv, T* u, T* v, const uniGrid2d< T >& grid){
+    T u_center[grid.size], v_center[grid.size], u_corner[grid.size], v_corner[grid.size];
+
+    u_to_p(u_center, u, grid);
+    v_to_p(v_center, v, grid);
+    u_to_w(u_corner, u, grid);
+    v_to_w(v_corner, v, grid);
+
+    mul(uu, u_center, u_center, grid.size);
+    mul(vv, v_center, v_center, grid.size);
+    mul(uv, u_corner, v_corner, grid.size);
+
+    T half_trace;
+    for (int i = 0; i < grid.size; i++) {
+        half_trace = 0.5 * (uu[i] + vv[i]);
+        uu[i] -= half_trace;
+        vv[i] -= half_trace;
+    }
+}
+
 // L = filter(uw) - filter(u)filter(w)
 // lx in v point, ly in u point
 // if base_width > 1.0, then two filters applied, otherwise only test filter
@@ -875,6 +896,7 @@ void compute_leonard_vector(T* lx, T* ly, T* w, T* u, T* v, const T test_width, 
 {
     T uw[grid.size], vw[grid.size];
     T wc[grid.size], uc[grid.size], vc[grid.size];
+    T uu[grid.size], uv[grid.size], vv[grid.size];
     
     // ----- first part of Leonard vector ---- //
 
@@ -882,6 +904,10 @@ void compute_leonard_vector(T* lx, T* ly, T* w, T* u, T* v, const T test_width, 
         Z_scheme(uw, vw, w, u, v, grid);
     else if (leonard_scheme == Leonard_PV_E_scheme)
         E_scheme(uw, vw, w, u, v, grid);
+    else if (leonard_scheme == Leonard_UV_scheme) {
+        UV_scheme(uu, uv, vv, u, v, grid);
+        curl_tensor(uw, vw, uu, uv, vv, grid);
+    }
     else
         assert(false);
     
@@ -898,6 +924,10 @@ void compute_leonard_vector(T* lx, T* ly, T* w, T* u, T* v, const T test_width, 
         Z_scheme(uw, vw, wc, uc, vc, grid);
     else if (leonard_scheme == Leonard_PV_E_scheme)
         E_scheme(uw, vw, wc, uc, vc, grid);
+    else if (leonard_scheme == Leonard_UV_scheme) {
+        UV_scheme(uu, uv, vv, uc, vc, grid);
+        curl_tensor(uw, vw, uu, uv, vv, grid);
+    }
     else
         assert(false);
     
@@ -912,6 +942,8 @@ void compute_leonard_vector(T* lx, T* ly, T* w, T* u, T* v, const T test_width, 
 
 // L = filter(uu) - filter(u)filter(u)
 // lxx, lyy in center points, lxy in corner points
+// Note it is trace-free (which is ok for Germano identity
+// in momentum and vorticity fluxes)
 template < typename T >
 void compute_leonard_tensor(T* lxx, T* lxy, T* lyy, T* u, T* v, const T test_width, const uniGrid2d< T >& grid)
 {   
@@ -921,14 +953,7 @@ void compute_leonard_tensor(T* lxx, T* lxy, T* lyy, T* u, T* v, const T test_wid
 
     // ----- first part of Leonard tensor ---- //
 
-    u_to_p(u_center, u, grid);
-    v_to_p(v_center, v, grid);
-    u_to_w(u_corner, u, grid);
-    v_to_w(v_corner, v, grid);
-
-    mul(uu, u_center, u_center, grid.size);
-    mul(vv, v_center, v_center, grid.size);
-    mul(uv, u_corner, v_corner, grid.size);
+    UV_scheme(uu, uv, vv, u, v, grid);
 
     apply_filter(lxx, uu, test_width, grid);
     apply_filter(lxy, uv, test_width, grid);
@@ -937,29 +962,15 @@ void compute_leonard_tensor(T* lxx, T* lxy, T* lyy, T* u, T* v, const T test_wid
     // ----- second part of Leonard tensor ---- //
 
     apply_filter(uc, u, test_width, grid);
-    apply_filter(vc, u, test_width, grid);
+    apply_filter(vc, v, test_width, grid);
 
-    u_to_p(u_center, uc, grid);
-    v_to_p(v_center, vc, grid);
-    u_to_w(u_corner, uc, grid);
-    v_to_w(v_corner, vc, grid);
-
-    mul(uu, u_center, u_center, grid.size);
-    mul(vv, v_center, v_center, grid.size);
-    mul(uv, u_corner, v_corner, grid.size);
+    UV_scheme(uu, uv, vv, uc, vc, grid);
 
     // ---------- full Leonard tensor -------- //
     
     update(lxx, -(T)1.0, uu, grid.size);
     update(lxy, -(T)1.0, uv, grid.size);
     update(lyy, -(T)1.0, vv, grid.size);
-
-    T half_trace;
-    for (int i = 0; i < grid.size; i++) {
-        half_trace = 0.5 * (lxx[i] + lyy[i]);
-        lxx[i] -= half_trace;
-        lyy[i] -= half_trace;
-    }
 }
 
 template < typename T >
@@ -1286,7 +1297,21 @@ void lap_UV_model(T* fx, T* fy, T* u, T* v, T* nu_p, const uniGrid2d< T >& grid)
 }
 
 template < typename T >
-void lap_UV_smagorinsky_model(T* mxx, T* mxy, T*myy, T* u, T* v, const T mix_length, const uniGrid2d< T >& grid)
+void lap_UV_model_flux(T* mxx, T* mxy, T*myy, T* u, T* v, const T mix_length, const uniGrid2d< T >& grid)
+{   
+    T sxx[grid.size], sxy[grid.size], syy[grid.size];
+    
+    strain_tensor(sxx, sxy, syy, u, v, grid);
+
+    for (int i = 0; i < grid.size; i++) {
+        mxx[i] = - 2.0 * sqr(mix_length) * sxx[i];
+        myy[i] = - 2.0 * sqr(mix_length) * syy[i];
+        mxy[i] = - 2.0 * sqr(mix_length) * sxy[i];
+    }
+}
+
+template < typename T >
+void lap_UV_smagorinsky_model(T* mxx, T* mxy, T* myy, T* u, T* v, const T mix_length, const uniGrid2d< T >& grid)
 {   
     T sxx[grid.size], sxy[grid.size], syy[grid.size];
     T S_center[grid.size], S_corner[grid.size];
@@ -1504,6 +1529,7 @@ void bilap_w_smagorinsky_model(T* alphax, T* alphay, T* sx, T* sy, T* u, T* v, T
 template < typename T >
 void model_vector(T* alphax, T* alphay, T* sx, T* sy, T* u, T* v, T* w, const T mix_length, int viscosity_model, const uniGrid2d< T >& grid)
 {
+    T mxx[grid.size], mxy[grid.size], myy[grid.size];
     switch (viscosity_model) {
         case lap:
             lap_model(alphax, alphay, sx, sy, mix_length, grid);
@@ -1528,6 +1554,14 @@ void model_vector(T* alphax, T* alphay, T* sx, T* sy, T* u, T* v, T* w, const T 
             break;
         case bilap_w_smag:
             bilap_w_smagorinsky_model(alphax, alphay, sx, sy, u, v, w, mix_length, grid);
+            break;
+        case lap_UV_smag:
+            lap_UV_smagorinsky_model(mxx, mxy, myy, u, v, mix_length, grid);
+            curl_tensor(alphax, alphay, mxx, mxy, myy, grid);
+            break;
+        case lap_UV:
+            lap_UV_model_flux(mxx, mxy, myy, u, v, mix_length, grid);
+            curl_tensor(alphax, alphay, mxx, mxy, myy, grid);
             break;
         default:
             assert(1 == 2 && "viscosity model is wrong");

@@ -121,6 +121,9 @@ int _filter_iterations, int _leonard_scheme, T _lagrangian_time, T dt, const uni
         case lap:
             max_C2 = (T)1.0 / ((T)8.0 * dt);
             break;
+        case lap_UV:
+            max_C2 = (T)1.0 / ((T)8.0 * dt);
+            break;
         case bilap:
             max_C2 = (T)1.0 / ((T)64.0 * dt);
             break;
@@ -577,6 +580,12 @@ void dynamic_model< T >::statistics(T* psi, T* w, T* u, T* v, T dt, const uniGri
         case bilap_w_smag:
             Cs = pow(Cs2_mean, (T)1.0/(T)4.0);
             break;
+        case lap_UV_smag:
+            Cs = pow(Cs2_mean, (T)1.0/(T)2.0);
+            break;
+        case lap_UV:
+            Cs = (T)0.0;
+            break;
         default:
             assert(1 == 2 && "model is wrong");
             break;
@@ -724,7 +733,6 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
     Pawar, San, 2020
     */
     T lxx[grid.size], lyy[grid.size], lxy[grid.size];
-    T sxx[grid.size], sxy[grid.size], syy[grid.size], S_center[grid.size], S_corner[grid.size];
     T uf[grid.size], vf[grid.size];
     T mxx[grid.size], myy[grid.size], mxy[grid.size];
     T mxxf[grid.size], myyf[grid.size], mxyf[grid.size];
@@ -733,41 +741,26 @@ T DSM_Pawar(T* wim, T* u, T* v, T test_width, T base_width,
 
     // Trace-free Leonard stress
     compute_leonard_tensor(lxx, lxy, lyy, u, v, test_width, grid);
-    
-    // Smagorinsky model on the base level
-    strain_tensor(sxx, sxy, syy, u, v, grid);
-    compute_S(S_center, sxx, sxy, syy, grid);
-    //assign(S_center, (T)1.0, grid.size);
-    p_to_w(S_corner, S_center, grid);
 
     T mix_length = base_width * grid.dx;
-    for (int i = 0; i < grid.size; i++) {
-        mxx[i] = - 2.0 * sqr(mix_length) * S_center[i] * sxx[i];
-        myy[i] = - 2.0 * sqr(mix_length) * S_center[i] * syy[i];
-        mxy[i] = - 2.0 * sqr(mix_length) * S_corner[i] * sxy[i];
-    }
-
+    lap_UV_smagorinsky_model(mxx, mxy, myy, u, v, mix_length, grid);
+    
     // Filtering of the base model
-    apply_filter(mxxf, mxx, test_width, (T)0.0, grid);
-    apply_filter(myyf, myy, test_width, (T)0.0, grid);
-    apply_filter(mxyf, mxy, test_width, (T)0.0, grid);
+    apply_filter(mxxf, mxx, test_width, grid);
+    apply_filter(myyf, myy, test_width, grid);
+    apply_filter(mxyf, mxy, test_width, grid);
 
     // Smagorinsky model on the test level
-    apply_filter(uf, u, test_width, (T)0.0, grid);
-    apply_filter(vf, u, test_width, (T)0.0, grid);
-
-    strain_tensor(sxx, sxy, syy, uf, vf, grid);
-    compute_S(S_center, sxx, sxy, syy, grid);
-    //assign(S_center, (T)1.0, grid.size);
-    p_to_w(S_corner, S_center, grid);
+    apply_filter(uf, u, test_width, grid);
+    apply_filter(vf, v, test_width, grid);
 
     T tb_width = sqrt(sqr(test_width) + sqr(base_width));
     mix_length = tb_width * grid.dx;
-    for (int i = 0; i < grid.size; i++) {
-        Mxx[i] = - 2.0 * sqr(mix_length) * S_center[i] * sxx[i] - mxxf[i];
-        Myy[i] = - 2.0 * sqr(mix_length) * S_center[i] * syy[i] - myyf[i];
-        Mxy[i] = - 2.0 * sqr(mix_length) * S_corner[i] * sxy[i] - mxyf[i];
-    }
+    lap_UV_smagorinsky_model(Mxx, Mxy, Myy, uf, vf, mix_length, grid);
+
+    update(Mxx, -(T)1.0, mxxf, grid.size);
+    update(Myy, -(T)1.0, myyf, grid.size);
+    update(Mxy, -(T)1.0, mxyf, grid.size);
 
     if (averaging_method == dyn_momentum_flux) {
         scal_prod_tensors(LM, lxx, lxy, lyy, Mxx, Mxy, Myy, grid);
