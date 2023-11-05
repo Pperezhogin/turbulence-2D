@@ -16,7 +16,7 @@
 using namespace nse;
 
 enum {lap, bilap, lap_leith, lap_smag, bilap_smag, lap_w_smag, bilap_w_smag, bilap_leith, lap_UV_smag, lap_UV}; // viscosity models
-enum {averaging_global, clipping, lagrangian, dyn2, dyn2_ZE, dyn2_Morinishi, Maulik2017}; // averaging methods. dyn2 stands for MSE of 2 constants. Applicable only for reynolds
+enum {averaging_global, clipping, lagrangian, dyn2, dyn2_ZE, dyn2_Morinishi, Maulik2017, clipping_global}; // averaging methods. dyn2 stands for MSE of 2 constants. Applicable only for reynolds
 enum {mixed_ssm, mixed_ngm};
 enum {dyn_momentum_flux, dyn_momentum_forcing, dyn_vorticity_flux, dyn_vorticity_forcing};
 enum {Leonard_PV_Z_scheme, Leonard_PV_E_scheme, Leonard_UV_scheme};

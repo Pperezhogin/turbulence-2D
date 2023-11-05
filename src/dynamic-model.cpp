@@ -300,7 +300,7 @@ void dynamic_model< T >::update_viscosity(T* w, T* u, T* v, T* psi, T dt, bool s
     compute_bx_by(w, u, v, psi, grid); // bx, by if dyn2 
     
     // One-parameter dynamic model
-    if (averaging_method == averaging_global || averaging_method == clipping || averaging_method == lagrangian) {
+    if (averaging_method == averaging_global || averaging_method == clipping || averaging_method == lagrangian || averaging_method == clipping_global) {
         scal_prod(lm, Lx, Ly, mx, my, grid);
         scal_prod(mm, mx, my, mx, my, grid);
     }
@@ -315,6 +315,14 @@ void dynamic_model< T >::update_viscosity(T* w, T* u, T* v, T* psi, T dt, bool s
         case clipping:
             apply_filter_iter(LM, lm, filter_iterations, grid);
             apply_filter_iter(MM, mm, filter_iterations, grid);
+            break;
+        case clipping_global:
+            for (int i = 0; i < grid.size; i++) {
+                LM[i] = max(lm[i], (T)0.0);
+            }
+            T lm_mean = average_xy(LM, grid);
+            assign(LM, lm_mean, grid.size);
+            assign(MM, average_xy(mm, grid), grid.size);
             break;
         case lagrangian: {
                 T rLM[grid.size], rMM[grid.size]; // rhs for Lagrange model  
@@ -340,7 +348,7 @@ void dynamic_model< T >::update_viscosity(T* w, T* u, T* v, T* psi, T dt, bool s
             }
     }
 
-    if (averaging_method == averaging_global || averaging_method == clipping || averaging_method == lagrangian) {
+    if (averaging_method == averaging_global || averaging_method == clipping || averaging_method == lagrangian || averaging_method == clipping_global) {
         safe_division(Cs2_local, LM, MM, max_C2, grid);
     }
 
