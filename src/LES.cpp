@@ -1,5 +1,5 @@
 #define _CRT_SECURE_NO_DEPRECATE
-#include "SGS_KE_LES.h"
+#include "LES.h"
 
 bool model_init()
 {
@@ -38,30 +38,46 @@ bool model_init()
 	fft_data.init(grid);
 #endif
     
+    dyn_model.init(viscosity_model, averaging_method, mixed_model, mixed_type, negvisc_backscatter, reynolds_backscatter, 
+		adm_model, adm_order, tf_width, bf_width, 
+		filter_iterations, leonard_scheme,
+		lagrangian_time, dt, grid);
+    
 	balance.init((Real)1.0, grid);
 
-	#ifdef ON_BACKSCATTER
-	nse_series.set(15);
-	#else
-	nse_series.set(5);
-	#endif
+	nse_series.set(32);
 	nse_series.name_variable(0, "kinetic energy");
 	nse_series.name_variable(1, "enstrophy");
     nse_series.name_variable(2, "palinstrophy");
     nse_series.name_variable(3, "kinetic energy viscous dissipation");
 	nse_series.name_variable(4, "enstrophy viscous dissipation");
-	#ifdef ON_BACKSCATTER
-    nse_series.name_variable(5, "Ediss eq");
-	nse_series.name_variable(6, "Eback eq");
-	nse_series.name_variable(7, "Ediss ten");
-	nse_series.name_variable(8, "Eback ten");
-	nse_series.name_variable(9, "SGS KE");
-	nse_series.name_variable(10, "SFS KE");
-	nse_series.name_variable(11, "nu2");
-	nse_series.name_variable(12, "neg SGS KE");
-	nse_series.name_variable(13, "min SGS KE");
-	nse_series.name_variable(14, "KE sum");
-	#endif
+    nse_series.name_variable(5, "Cs2");
+    nse_series.name_variable(6, "Cs");
+    nse_series.name_variable(7, "eddy visc P dissipation");
+    nse_series.name_variable(8, "ssm P dissipation");
+    nse_series.name_variable(9, "negvisc P dissipation");
+    nse_series.name_variable(10, "model P dissipation");
+    nse_series.name_variable(11, "eddy visc Z dissipation");
+    nse_series.name_variable(12, "ssm Z dissipation");
+    nse_series.name_variable(13, "negvisc Z dissipation");
+    nse_series.name_variable(14, "model Z dissipation");
+    nse_series.name_variable(15, "eddy visc E dissipation");
+    nse_series.name_variable(16, "ssm E dissipation");
+    nse_series.name_variable(17, "negvisc E dissipation");
+    nse_series.name_variable(18, "model E dissipation");
+    nse_series.name_variable(19, "negative Esub percent");
+    nse_series.name_variable(20, "mean Esub");
+	nse_series.name_variable(21, "LM backscatter percent");
+	nse_series.name_variable(22, "LM diss to back");
+	nse_series.name_variable(23, "MSE germano");
+	nse_series.name_variable(24, "corr germano");
+	nse_series.name_variable(25, "dissipation ratio germano");
+	nse_series.name_variable(26, "lag time");
+	nse_series.name_variable(27, "Decay time of subgrid energy");
+	nse_series.name_variable(28, "eddy visc E diss galil");
+	nse_series.name_variable(29, "negvisc E diss galil");
+	nse_series.name_variable(30, "Csim Reynolds");
+	nse_series.name_variable(31, "backscatter rate");
 
 #ifndef DUMP_CONTINUE
 	if (grid.mpi_com.rank == 0)
@@ -108,10 +124,8 @@ void model_clear()
 #else
 	fft_data.clear();
 #endif
-
-#ifdef ON_BACKSCATTER 
-    sgs_ke.clear();
-#endif
+    
+    dyn_model.clear();
 }
 
 // --------------------------- //
@@ -119,8 +133,35 @@ void model_clear()
 // --------------------------- //
 void init_nse_eq()
 {  
-	#ifdef ON_BACKSCATTER
-	sgs_ke.init(w, U, V, nu2_method, initial_cond, dt, grid);
+    #ifdef DYNAMIC_MODEL
+		dyn_model.init_lagrangian_eq(w, U, V, Psi, grid);
+	#endif
+}
+
+void test_interpolate()
+{
+	#ifdef A_PRIORI_SMAG
+	Real Cs;
+	Cs = interpolate_1d(t_Cs, Cs_value, Cs_length, -(Real)1.0);
+	printf("Test interpolate: t = -1, Cs = %E\n", Cs);
+
+	Cs = interpolate_1d(t_Cs, Cs_value, Cs_length, (Real)0.00030679);
+	printf("Test interpolate: t = 0.00030679, Cs = %E\n", Cs);
+
+	Cs = interpolate_1d(t_Cs, Cs_value, Cs_length, (Real)0.000307);
+	printf("Test interpolate: t = 0.000307, Cs = %E\n", Cs);
+
+	Cs = interpolate_1d(t_Cs, Cs_value, Cs_length, (Real)3.5);
+	printf("Test interpolate: t = 3.5, Cs = %E\n", Cs);
+
+	Cs = interpolate_1d(t_Cs, Cs_value, Cs_length, (Real)10.0);
+	printf("Test interpolate: t = 10.0, Cs = %E\n", Cs);
+
+	Cs = interpolate_1d(t_Cs, Cs_value, Cs_length, (Real)9.9942);
+	printf("Test interpolate: t = 9.9942, Cs = %E\n", Cs);
+
+	Cs = interpolate_1d(t_Cs, Cs_value, Cs_length, (Real)9.9941);
+	printf("Test interpolate: t = 9.9941, Cs = %E\n", Cs);
 	#endif
 }
 
@@ -131,11 +172,29 @@ bool advance_nse_eq_runge_kutta()
 {
         double begin_mark = omp_get_wtime();
 
-		#ifdef ON_BACKSCATTER
-		sgs_ke.update_KE(w, U, V, grid); 
+		Real local_Cs = 0;
+		#ifdef A_PRIORI_SMAG
+			local_Cs = interpolate_1d(t_Cs, Cs_value, Cs_length, current_time);
 		#endif
 
-		memcpy(Psi_rk, Psi, grid.size * sizeof(Real));
+		#ifdef DYNAMIC_MODEL
+		dyn_model.update_viscosity(w, U, V, Psi, dt, set_Smagorinsky_value, local_Cs, grid);
+		#endif
+
+		#ifdef SIMPLE_MODEL
+		dyn_model.set_simple_model(bilap_smag, Cs2, true, mixed_ssm, grid);
+		#endif
+
+		#if defined(DYNAMIC_MODEL) || defined(SIMPLE_MODEL)
+    	dyn_model.statistics(Psi, w, U, V, dt, grid);
+    	#endif
+
+		#ifdef DYNAMIC_MODEL_PAWAR
+			dyn_model.Cs2_mean = DSM_Pawar(w, U, V, Pawar_test_width, Pawar_base_width, Pawar_clipping, Pawar_averaging, grid);
+			dyn_model.Cs = sqrt(dyn_model.Cs2_mean);
+		#endif
+        
+        memcpy(Psi_rk, Psi, grid.size * sizeof(Real));
         memcpy(w_rk, w, grid.size * sizeof(Real));
 		memcpy(U_rk, U, grid.size * sizeof(Real));
 		memcpy(V_rk, V, grid.size * sizeof(Real));
@@ -156,14 +215,31 @@ bool advance_nse_eq_runge_kutta()
                 
             J_EZ(wim, w_rk, Psi_rk, grid);
 
+			#ifdef MEAN_FLOW
+				w_mean_flow(wim, w_rk, Umean, grid);
+			#endif
+
             #ifdef DIFFUSION
             w_diffusion(wim, w_rk, (Real)1.0 / c_Reynolds, grid);
             #endif
 
-			#ifdef ON_BACKSCATTER
-			sgs_ke.apply(wim, U_rk, V_rk, grid);
+			#if defined(DYNAMIC_MODEL) || defined(SIMPLE_MODEL)
+			//dyn_model.apply(wim, w, U, V, grid); // Euler method
+			dyn_model.apply(wim, w_rk, U_rk, V_rk, grid); // RK method
 			#endif
-			
+
+			#ifdef AD_FILTERING_ON
+				dyn_model.AD_filter(wim, w_rk, dt, 7, (Real)0.1, grid);
+			#endif
+
+			#ifdef DYNAMIC_MODEL_PAWAR
+			Real mxx[grid.size], myy[grid.size], mxy[grid.size];
+			lap_UV_smagorinsky_model(mxx, mxy, myy, U_rk, V_rk, dyn_model.Cs * grid.dx * Pawar_base_width, grid);
+			Real mx[grid.size], my[grid.size];
+			curl_tensor(mx, my, mxx, mxy, myy, grid);
+			divergence_vector(wim, mx, my, grid);
+			#endif
+
             if (time_index % ndebug == 0) {
                 check_const(wim, "wim after adv and diff", grid);
             }
@@ -216,10 +292,6 @@ bool advance_time()
     palinstrophy = - (Real)0.5 * average_xy(lap_w,w,grid);
 	
 	velocity_abs_max(&u_max, &v_max, U, V, grid);
-	if (max(u_max, v_max) > (Real)15.0) {
-		if (grid.mpi_com.rank == 0) printf("Model VZORVALAS'!\n");
-		return false;
-	}
 	if (time_index % ndebug == 0) {
         
         model_error(Uerr, Verr, Psierr, werr,
@@ -233,6 +305,7 @@ bool advance_time()
 
 	if ((grid.mpi_com.rank == 0) && (time_index % ndebug == 0)) {
 		printf(" >> U(max) = %.4f, V(max) = %.4f, current CFL = %.4f \n", u_max, v_max, max(u_max * dt / grid.dx, v_max * dt / grid.dy));
+		printf("Eddy viscosity model max CFL = %1.4f, mean CFL = %1.4f (2 - stability, 1 - no oscillation) \n", dyn_model.CFL_EVM_max, dyn_model.CFL_EVM_mean);
 
 		int est_sec = (int)(cpu_run_time * ((double)
 			((end_time - current_time) / (current_time - begin_time))));
@@ -246,25 +319,44 @@ bool advance_time()
 
 	}
 
-	nse_series.push(0,    (double)energy);
-	nse_series.push(1,    (double)enstrophy);
-	nse_series.push(2,    (double)palinstrophy);
-	nse_series.push(3,  - (double)balance.en_visc);
-	nse_series.push(4,  - (double)balance.ens_visc);
-	#ifdef ON_BACKSCATTER
-	nse_series.push(5,    (double)sgs_ke.m_Ediss_eq);
-	nse_series.push(6,    (double)sgs_ke.m_Eback_eq);
-	nse_series.push(7,    (double)sgs_ke.m_Ediss_ten);
-	nse_series.push(8,    (double)sgs_ke.m_Eback_ten);
-	nse_series.push(9,    (double)sgs_ke.m_SGS_KE);
-	nse_series.push(10,   (double)sgs_ke.m_SFS_KE);
-	nse_series.push(11,   (double)sgs_ke.m_nu2);
-	nse_series.push(12,   (double)sgs_ke.neg_SGS_KE);
-	nse_series.push(13,   (double)sgs_ke.min_SGS_KE);
-	nse_series.push(14,   (double)sgs_ke.m_SGS_KE+(double)energy);
-	#endif
-	
+	nse_series.push(0,   (double)energy);
+	nse_series.push(1,   (double)enstrophy);
+	nse_series.push(2,   (double)palinstrophy);
+	nse_series.push(3, - (double)balance.en_visc);
+	nse_series.push(4, - (double)balance.ens_visc);
+	nse_series.push(5,   (double)dyn_model.Cs2_mean);
+	nse_series.push(6,   (double)dyn_model.Cs);
+	nse_series.push(7,   (double)dyn_model.t_P_mean);
+	nse_series.push(8,   (double)dyn_model.ssm_P_mean);
+	nse_series.push(9,   (double)dyn_model.b_P_mean);
+	nse_series.push(10,  (double)dyn_model.model_P_mean);
+	nse_series.push(11,  (double)dyn_model.t_Z_mean);
+	nse_series.push(12,  (double)dyn_model.ssm_Z_mean);
+	nse_series.push(13,  (double)dyn_model.b_Z_mean);
+	nse_series.push(14,  (double)dyn_model.model_Z_mean);
+	nse_series.push(15,  (double)dyn_model.t_E_mean);
+	nse_series.push(16,  (double)dyn_model.ssm_E_mean);
+	nse_series.push(17,  (double)dyn_model.b_E_mean);
+	nse_series.push(18,  (double)dyn_model.model_E_mean);
+	nse_series.push(19,  (double)dyn_model.E_neg_p);
+	nse_series.push(20,  (double)dyn_model.Esub_mean);   
+	nse_series.push(21,  (double)dyn_model.LM_back_p);
+	nse_series.push(22,  (double)dyn_model.LM_diss_to_back);
+	nse_series.push(23,  (double)dyn_model.MSE_germano);
+	nse_series.push(24,  (double)dyn_model.C_germano);
+	nse_series.push(25,  (double)dyn_model.model_diss_to_l_diss_germano);
+	nse_series.push(26,  (double)dyn_model.mean_lag_time);
+	nse_series.push(27,  (double)dyn_model.Esub_time);
+	nse_series.push(28,  (double)dyn_model.t_E_mean_flux);
+	nse_series.push(29,  (double)dyn_model.b_E_mean_flux);
+	nse_series.push(30,  (double)dyn_model.Csim_back);
+	nse_series.push(31,  (double)dyn_model.backscatter_rate);
 	nse_series.push_time((double)current_time);
+
+	if (max(u_max, v_max) > (Real)15.0) {
+		if (grid.mpi_com.rank == 0) printf("Model VZORVALAS'!\n");
+		return false;
+	}
 
 	double end_mark = omp_get_wtime();
 	cpu_run_time += end_mark - begin_mark;
@@ -304,24 +396,20 @@ int main(int argc, char** argv)
 		MPI_Finalize();
 		return 0;
 	}
-	
-	unsigned seed = time(NULL);
-    MPI_Bcast(&seed, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
-    seed += grid.mpi_com.rank;
-	srand(seed);
-	for (int i = 0; i < grid.mpi_com.size; i++) {
-		int rnk = grid.mpi_com.rank;
-		if (rnk == i)
-			printf("my id = %i, my seed = %i \n", rnk, seed);
-		MPI_Barrier(grid.mpi_com.comm);
-	}
-
+	srand (time(NULL) + grid.mpi_com.rank);
+	//srand(grid.mpi_com.rank);
 	// init conditions: velocity, pressure
 
 	if (grid.mpi_com.rank == 0)
 	{
 		printf("My initial data index is %i\n", file_index);
 	}
+
+	#ifdef A_PRIORI_SMAG
+	read_series("/data90t/users/perezhogin/decaying-turbulence/Cs_ssm_bilap_128.nsx", 
+	Cs_length, t_Cs, Cs_value, grid);
+	//test_interpolate();
+	#endif
 
 	init_solution(Usol, Vsol, Psisol, wsol, grid, file_index);
     
@@ -359,48 +447,52 @@ int main(int argc, char** argv)
 				print_xmin, print_xmax,
 				print_ymin, print_ymax,
 				grid, current_time);
-        
-			#ifdef ON_BACKSCATTER
-			write_tecplot(OUTPUT_DIR"-nu2-.plt", print_index,
-				sgs_ke.nu2, "w",
+            /*
+			write_tecplot(OUTPUT_DIR"-Cs2-.plt", print_index,
+				dyn_model.Cs2_local, "w",
+				print_xmin, print_xmax,
+				print_ymin, print_ymax,
+				grid, current_time);
+            */
+			/*
+			write_tecplot(OUTPUT_DIR"-damping_coef-.plt", print_index,
+				dyn_model.damping_coef, "w",
 				print_xmin, print_xmax,
 				print_ymin, print_ymax,
 				grid, current_time);
 
-			write_tecplot(OUTPUT_DIR"-Ediss-.plt", print_index,
-				sgs_ke.Ediss, "w",
+			write_tecplot(OUTPUT_DIR"-phi-.plt", print_index,
+				phi, "w",
 				print_xmin, print_xmax,
 				print_ymin, print_ymax,
 				grid, current_time);
+			*/
 
-			write_tecplot(OUTPUT_DIR"-Eback-.plt", print_index,
-				sgs_ke.Eback, "w",
-				print_xmin, print_xmax,
-				print_ymin, print_ymax,
-				grid, current_time);
-
-			write_tecplot(OUTPUT_DIR"-SGS_KE-.plt", print_index,
-				sgs_ke.sgs_ke, "w",
-				print_xmin, print_xmax,
-				print_ymin, print_ymax,
-				grid, current_time);
-            
-			write_tecplot(OUTPUT_DIR"-SFS_KE-.plt", print_index,
-				sgs_ke.sfs_ke, "w",
-				print_xmin, print_xmax,
-				print_ymin, print_ymax,
-				grid, current_time);
-
-			write_tecplot(OUTPUT_DIR"-nu_eddy-.plt", print_index,
-				sgs_ke.nu_eddy, "w",
-				print_xmin, print_xmax,
-				print_ymin, print_ymax,
-				grid, current_time);
-
-			write_binary_przgn(OUTPUT_DIR"-wim_diss-.nsx", sgs_ke.wim_diss, grid, print_index);
-			write_binary_przgn(OUTPUT_DIR"-wim_back-.nsx", sgs_ke.wim_back, grid, print_index);
-			#endif
             write_binary_przgn(PSI_BIN_FILE, Psi, grid, print_index);
+			
+			// base level models
+			#if defined(DYNAMIC_MODEL) || defined(SIMPLE_MODEL)
+			write_binary_przgn(OUTPUT_DIR"Cs2.nsx", dyn_model.Cs2_local, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"tx.nsx", dyn_model.tx, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"ty.nsx", dyn_model.ty, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"ssmx.nsx", dyn_model.ssmx, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"ssmy.nsx", dyn_model.ssmy, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"bx.nsx", dyn_model.bx, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"by.nsx", dyn_model.by, grid, print_index);
+			#endif
+
+			// germano identity
+			#ifdef DYNAMIC_MODEL
+			// numerator denominator
+            if (dyn_model.averaging_method == averaging_global)
+            {
+                write_binary_przgn(OUTPUT_DIR"LM.nsx", dyn_model.lm, grid, print_index);
+			    write_binary_przgn(OUTPUT_DIR"MM.nsx", dyn_model.mm, grid, print_index);    
+            } else {
+			    write_binary_przgn(OUTPUT_DIR"LM.nsx", dyn_model.LM, grid, print_index);
+			    write_binary_przgn(OUTPUT_DIR"MM.nsx", dyn_model.MM, grid, print_index);
+            }
+			#endif
 
 			print_mark += print_dt;
 			print_index++;
@@ -445,17 +537,13 @@ int main(int argc, char** argv)
 		nse_series.write(NSE_SEQ_FILE);
 	}
 	
-	
 	if (status)
 		model_print("OK");
 	else
 		model_print(" FAILURE!: ** advance eq. [nse] **\n");
-
-
+	
 	model_clear();
-
 	MPI_Finalize();
-
 	return 0;
 }
 
@@ -499,8 +587,16 @@ bool model_print(const char* msg_status)
 			fprintf(ptr, " \t bf_width = %E \n", dyn_model.bf_width);
 			fprintf(ptr, " \t filter iterations = %i \n", dyn_model.filter_iterations);
 			fprintf(ptr, " \t lagrangian time = %E \n", dyn_model.lagrangian_time);
+			fprintf(ptr, " \t leonard scheme = %i \n", dyn_model.leonard_scheme);
 			#else
 			fprintf(ptr, " \t Dynamic model is turned off \n");
+			#endif
+			#ifdef DYNAMIC_MODEL_PAWAR
+			fprintf(ptr, " \t Dynamic model in Pawar form is used \n");
+			fprintf(ptr, " \t test width = %E \n", Pawar_test_width);
+			fprintf(ptr, " \t base width = %E \n", Pawar_base_width);
+			fprintf(ptr, " \t clipping = %i \n", int(Pawar_clipping));
+			fprintf(ptr, " \t averaging = %i \n", Pawar_averaging);
 			#endif
 
 			#ifdef SIMPLE_MODEL

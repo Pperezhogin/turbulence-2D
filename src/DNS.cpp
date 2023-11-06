@@ -1,5 +1,5 @@
 #define _CRT_SECURE_NO_DEPRECATE
-#include "san_DNS.h"
+#include "DNS.h"
 
 void init_4models(dynamic_model< Real >& dyn_lap, dynamic_model< Real >& dyn_bilap,
 dynamic_model< Real >& dyn_ssm_bilap, dynamic_model< Real >& dyn_ssm_bilap_keb, 
