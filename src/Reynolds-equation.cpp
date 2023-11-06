@@ -32,6 +32,40 @@ void Reynolds_eq_struct<T>::clear()
 }
 
 template<typename T>
+void Reynolds_eq_struct<T>::init_with_ZB(T* w, T* u, T* v, const T filter_width, const uniGrid2d< T >&grid)
+{
+    ZB20_model(tau_xy, tau_dd, tau_tr, 
+               w, u, v, 
+               filter_width, grid);
+}
+
+template<typename T>
+void Reynolds_eq_struct<T>::diagnostics(T* Psi, T* w, T* u, T* v, const uniGrid2d< T >&grid)
+{
+    SGS_KE = average_xy(tau_tr, grid);
+    
+    // SGE KE production diagnostics
+    T D[grid.size], D_hat[grid.size];
+    T rhs_xy[grid.size], rhs_dd[grid.size], rhs_tr[grid.size];
+    Velocity_gradients(D, D_hat, u, v, grid);
+    // Start forming the RHS
+    RHS_Production(rhs_xy, rhs_dd, rhs_tr,
+                   tau_xy, tau_dd, tau_tr,
+                   w, D, D_hat,           
+                   grid);
+
+    SGS_KE_prod = average_xy(rhs_tr, grid);
+
+    T wim[grid.size], Prod[grid.size];
+    assign(wim, (T)0.0, grid.size);
+    apply(wim, grid);
+    mul(Prod, wim, Psi, grid.size);
+
+    // KE loss is minus the KE tendency
+    KE_loss = average_xy(Prod, grid);
+}
+
+template<typename T>
 void Reynolds_eq_struct<T>::RK_init(const uniGrid2d< T >&grid)
 {
     /*
@@ -77,14 +111,6 @@ void Reynolds_eq_struct<T>::RK_step(T* w, T* u, T* v, T dt, const uniGrid2d< T >
     assign(tau_xy, (T)1.0, tau_xyp, dt, rhs_xy, grid.size);
     assign(tau_dd, (T)1.0, tau_ddp, dt, rhs_dd, grid.size);
     assign(tau_tr, (T)1.0, tau_trp, dt, rhs_tr, grid.size);
-
-    // SGS energy should be positive definite. 
-    // However, zero SGS energy may lead to degenerate solutions.
-    // So, we add a negligable threshold
-    for (int i = 0; i < grid.size; i++)
-    {
-        tau_tr[i] = max(tau_tr[i], small_eps);
-    }
 }
 
 template<typename T>

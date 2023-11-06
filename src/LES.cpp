@@ -43,13 +43,11 @@ bool model_init()
 		filter_iterations, leonard_scheme,
 		lagrangian_time, dt, grid);
 
-	#ifdef REYNOLDS_EQUATION
-	Reynolds_eq.init(grid);
-	#endif
+	Reynolds_eq.init(grid);	
     
 	balance.init((Real)1.0, grid);
 
-	nse_series.set(32);
+	nse_series.set(36);
 	nse_series.name_variable(0, "kinetic energy");
 	nse_series.name_variable(1, "enstrophy");
     nse_series.name_variable(2, "palinstrophy");
@@ -82,6 +80,10 @@ bool model_init()
 	nse_series.name_variable(29, "negvisc E diss galil");
 	nse_series.name_variable(30, "Csim Reynolds");
 	nse_series.name_variable(31, "backscatter rate");
+	nse_series.name_variable(32, "Reynolds: SGS KE");
+	nse_series.name_variable(33, "Reynolds: total KE");
+	nse_series.name_variable(34, "Reynolds: SGS KE production");
+	nse_series.name_variable(35, "Reynolds: KE loss");
 
 #ifndef DUMP_CONTINUE
 	if (grid.mpi_com.rank == 0)
@@ -143,6 +145,9 @@ void init_nse_eq()
     #ifdef DYNAMIC_MODEL
 		dyn_model.init_lagrangian_eq(w, U, V, Psi, grid);
 	#endif
+	#ifdef REYNOLDS_EQUATION
+	Reynolds_eq.init_with_ZB(w, U, V, sqrt(6.0), grid);
+	#endif
 }
 
 void test_interpolate()
@@ -202,6 +207,7 @@ bool advance_nse_eq_runge_kutta()
 		#endif
 
 		#ifdef REYNOLDS_EQUATION
+		Reynolds_eq.diagnostics(Psi, w, U, V, grid);
 		Reynolds_eq.RK_init(grid);
 		#endif
         
@@ -367,6 +373,10 @@ bool advance_time()
 	nse_series.push(29,  (double)dyn_model.b_E_mean_flux);
 	nse_series.push(30,  (double)dyn_model.Csim_back);
 	nse_series.push(31,  (double)dyn_model.backscatter_rate);
+	nse_series.push(32,  (double)Reynolds_eq.SGS_KE);
+	nse_series.push(33,  (double)Reynolds_eq.SGS_KE + (double)energy);
+	nse_series.push(34,  (double)Reynolds_eq.SGS_KE_prod);
+	nse_series.push(35,  (double)Reynolds_eq.KE_loss);
 	nse_series.push_time((double)current_time);
 
 	if (max(u_max, v_max) > (Real)15.0) {
@@ -485,6 +495,7 @@ int main(int argc, char** argv)
 			*/
 
             write_binary_przgn(PSI_BIN_FILE, Psi, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"w.nsx", w, grid, print_index);
 			
 			// base level models
 			#if defined(DYNAMIC_MODEL) || defined(SIMPLE_MODEL)
@@ -508,6 +519,12 @@ int main(int argc, char** argv)
 			    write_binary_przgn(OUTPUT_DIR"LM.nsx", dyn_model.LM, grid, print_index);
 			    write_binary_przgn(OUTPUT_DIR"MM.nsx", dyn_model.MM, grid, print_index);
             }
+			#endif
+
+			#ifdef REYNOLDS_EQUATION
+			write_binary_przgn(OUTPUT_DIR"tau_xy.nsx", Reynolds_eq.tau_xy, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"tau_dd.nsx", Reynolds_eq.tau_dd, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"tau_tr.nsx", Reynolds_eq.tau_tr, grid, print_index);
 			#endif
 
 			print_mark += print_dt;

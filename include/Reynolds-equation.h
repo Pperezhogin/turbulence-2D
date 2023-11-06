@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 using namespace nse;
+#define small_eps std::numeric_limits<T>::min()
 
 enum {set_zero_energy, set_ZB_energy};
 
@@ -23,10 +24,17 @@ struct Reynolds_eq_struct
     T* tau_xyp;
     T* tau_ddp;
     T* tau_trp;
+
+    // Diagnostics
+    T SGS_KE;
+    T SGS_KE_prod; // Production of SGS KE in Reynolds equation
+    T KE_loss;     // Loss of resolved KE; ideally, SGS_KE_prod = KE_loss
     
     public:
         void init(const uniGrid2d< T >&grid);
         void clear();
+        void init_with_ZB(T* w, T* u, T* v, const T filter_width, const uniGrid2d< T >&grid);
+        void diagnostics(T* Psi, T* w, T* u, T* v, const uniGrid2d< T >&grid);
         void RK_init(const uniGrid2d< T >&grid);
         void RK_step(T* w, T* u, T* v, T dt, const uniGrid2d< T >&grid);
         void apply(T* wim, const uniGrid2d< T >&grid);
@@ -77,12 +85,22 @@ void RHS_Production(T* rhs_xy, T* rhs_dd, T* rhs_tr,
     w_to_p(D_p, D, grid);
     w_to_p(w_p, w, grid);
 
+    // Better numerical scheme accounting for the staggered grid
+    T D_tau_xy[grid.size], D_tau_xy_p[grid.size];
+    mul(D_tau_xy, D, tau_xy, grid.size);
+    w_to_p(D_tau_xy_p, D_tau_xy, grid);
+
+    T w_tau_xy[grid.size], w_tau_xy_p[grid.size];
+    mul(w_tau_xy, w, tau_xy, grid.size);
+    w_to_p(w_tau_xy_p, w_tau_xy, grid);
+
+
     // Compute the RHS
     for (int i = 0; i < grid.size; i++)
     {
-        rhs_xy[i] = -   D[i] * tau_tr_w[i] -     w[i] * tau_dd_w[i];
-        rhs_dd[i] =   w_p[i] * tau_xy_p[i] - D_hat[i] * tau_tr[i];
-        rhs_tr[i] = - D_p[i] * tau_xy_p[i] - D_hat[i] * tau_dd[i];
+        rhs_xy[i] = - D[i] * max(tau_tr_w[i], small_eps) - w[i] * tau_dd_w[i];
+        rhs_dd[i] =   w_tau_xy_p[i] - D_hat[i] * max(tau_tr[i], small_eps);
+        rhs_tr[i] = - D_tau_xy_p[i] - D_hat[i] * tau_dd[i];
     }
 }
 
@@ -106,4 +124,36 @@ void Velocity_gradients(T* D, T* D_hat,
         D_hat[i] = sxx[i] - syy[i];
         D[i] = (T)2.0 * sxy[i];
     }
+}
+
+template < typename T >
+void ZB20_model(T* tau_xy, T* tau_dd, T* tau_tr, 
+                T* w, T* u, T* v, 
+                const T filter_width, const uniGrid2d< T >& grid)
+{
+    /*
+    This function computes the SGS stress tensor components
+    using the Zanna Bolton (2020) model
+    */
+
+    // Velocity gradients
+    T D[grid.size], D_hat[grid.size];
+    Velocity_gradients(D, D_hat, u, v, grid);
+
+    T D_p[grid.size], w_p[grid.size];
+    w_to_p(D_p, D, grid);
+    w_to_p(w_p, w, grid);
+
+    T D_hat_w[grid.size];
+    p_to_w(D_hat_w, D_hat, grid);
+
+    T C;
+    C = grid.dx * grid.dy * filter_width * filter_width / 24.0;
+    for (int i=0; i < grid.size; i++)
+    {
+        // Compute the SGS tensor components
+        tau_xy[i] =   C * D_hat_w[i] * w[i];
+        tau_dd[i] = - C * D_p[i] * w_p[i];
+        tau_tr[i] =   max(C * (T)0.5 * (w_p[i] * w_p[i] + D_hat[i] * D_hat[i] + D_p[i] * D_p[i]), small_eps);
+    }   
 }

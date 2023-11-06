@@ -698,7 +698,7 @@ void curl_tensor(T* tx, T* ty, T* txx, T* txy, T* tyy, const uniGrid2d< T >& gri
 
 // upwind tendency in p points
 template < typename T >
-void upwind_advection_p(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid)
+void upwind_advection_p(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid, bool upwind=true)
 {
     int i, j, idx;
     T flux_u[grid.size], flux_v[grid.size]; // u and v fluxes in u and v points
@@ -711,11 +711,15 @@ void upwind_advection_p(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid)
     {
         idx = i * grid.ny + grid.gcy;
         for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
-
-            flux_u[idx] = max(u[idx], (T)0.0) * X[idx - grid.ny]
-                        + min(u[idx], (T)0.0) * X[idx];
-            flux_v[idx] = max(v[idx], (T)0.0) * X[idx - 1]
-                        + min(v[idx], (T)0.0) * X[idx];
+            if (upwind){
+                flux_u[idx] = max(u[idx], (T)0.0) * X[idx - grid.ny]
+                            + min(u[idx], (T)0.0) * X[idx];
+                flux_v[idx] = max(v[idx], (T)0.0) * X[idx - 1]
+                            + min(v[idx], (T)0.0) * X[idx];
+            } else {
+                flux_u[idx] = u[idx] * (T)0.5 * (X[idx - grid.ny] + X[idx]);
+                flux_v[idx] = v[idx] * (T)0.5 * (X[idx - 1] + X[idx]);
+            }
         }
     }
 
@@ -736,7 +740,7 @@ void upwind_advection_p(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid)
 
 // upwind tendency in w points
 template < typename T >
-void upwind_advection_w(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid)
+void upwind_advection_w(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid, bool upwind=true)
 {
     int i, j, idx;
     T flux_u[grid.size], flux_v[grid.size]; // u and v fluxes in V and U points
@@ -753,11 +757,16 @@ void upwind_advection_w(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid)
     {
         idx = i * grid.ny + grid.gcy;
         for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
-
-            flux_u[idx] = max(u_v[idx], (T)0.0) * X[idx]
-                        + min(u_v[idx], (T)0.0) * X[idx + grid.ny];
-            flux_v[idx] = max(v_u[idx], (T)0.0) * X[idx]
-                        + min(v_u[idx], (T)0.0) * X[idx + 1];
+            if (upwind) {
+                flux_u[idx] = max(u_v[idx], (T)0.0) * X[idx]
+                            + min(u_v[idx], (T)0.0) * X[idx + grid.ny];
+                flux_v[idx] = max(v_u[idx], (T)0.0) * X[idx]
+                            + min(v_u[idx], (T)0.0) * X[idx + 1];
+            } else
+            {
+                flux_u[idx] = u_v[idx] * (T)0.5 * (X[idx] + X[idx + grid.ny]);
+                flux_v[idx] = v_u[idx] * (T)0.5 * (X[idx] + X[idx + 1]);
+            }
         }
     }
 
@@ -770,8 +779,8 @@ void upwind_advection_w(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid)
         idx = i * grid.ny + grid.gcy;
         for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
 
-            wim[idx] -= (flux_u[idx + grid.ny] - flux_u[idx]) * grid.dxi
-                      + (flux_v[idx +       1] - flux_v[idx]) * grid.dyi;
+            wim[idx] -= (flux_u[idx] - flux_u[idx - grid.ny]) * grid.dxi
+                      + (flux_v[idx] - flux_v[idx - 1]) * grid.dyi;
         }
     }
 }
