@@ -107,10 +107,10 @@ void Reynolds_eq_struct<T>::RK_step(T* w, T* u, T* v, T dt, const uniGrid2d< T >
     assign(rhs_tr, (T)0.0, grid.size);
 
     // Start forming the RHS
-    RHS_Production(rhs_xy, rhs_dd, rhs_tr,
-                   tau_xy, tau_dd, tau_tr, // Here we use current SGS tensor
-                   w, D, D_hat,            // Here we use current gradients 
-                   grid);
+    // RHS_Production(rhs_xy, rhs_dd, rhs_tr,
+    //                tau_xy, tau_dd, tau_tr, // Here we use current SGS tensor
+    //                w, D, D_hat,            // Here we use current gradients 
+    //                grid);
 
     Relaxation_to_ZB(rhs_xy, rhs_dd, rhs_tr,
                      tau_xy, tau_dd, tau_tr, 
@@ -124,6 +124,11 @@ void Reynolds_eq_struct<T>::RK_step(T* w, T* u, T* v, T dt, const uniGrid2d< T >
     assign(tau_xy, (T)1.0, tau_xyp, dt, rhs_xy, grid.size);
     assign(tau_dd, (T)1.0, tau_ddp, dt, rhs_dd, grid.size);
     assign(tau_tr, (T)1.0, tau_trp, dt, rhs_tr, grid.size);
+
+    // // Hard-coded ZB model, without relaxation
+    // ZB20_model(tau_xy, tau_dd, tau_tr, 
+    //            w, D, D_hat, 
+    //            (T)sqrt(6.0), grid);
 }
 
 template<typename T>

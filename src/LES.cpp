@@ -132,9 +132,7 @@ void model_clear()
 #endif
     
     dyn_model.clear();
-	#ifdef REYNOLDS_EQUATION
 	Reynolds_eq.clear();
-	#endif
 }
 
 // --------------------------- //
@@ -194,10 +192,10 @@ bool advance_nse_eq_runge_kutta()
 		#endif
 
 		#ifdef SIMPLE_MODEL
-		dyn_model.set_simple_model(bilap_smag, Cs2, true, mixed_ssm, grid);
+		dyn_model.set_simple_model(bilap_smag, (Real)(0.06/36.), false, mixed_ssm, grid);
 		#endif
 
-		#if defined(DYNAMIC_MODEL) || defined(SIMPLE_MODEL)
+		#ifdef DYNAMIC_MODEL
     	dyn_model.statistics(Psi, w, U, V, dt, grid);
     	#endif
 

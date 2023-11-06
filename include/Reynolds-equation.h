@@ -143,15 +143,21 @@ void ZB20_model(T* tau_xy, T* tau_dd, T* tau_tr,
     T D_hat_w[grid.size];
     p_to_w(D_hat_w, D_hat, grid);
 
+    // Different numerical scheme
+    T Dw[grid.size], Dw_p[grid.size];
+    mul(Dw, D, w, grid.size);
+    w_to_p(Dw_p, Dw, grid);
+
     T C;
     C = grid.dx * grid.dy * filter_width * filter_width / 24.0;
     for (int i=0; i < grid.size; i++)
     {
         // Compute the SGS tensor components
         tau_xy[i] =   C * D_hat_w[i] * w[i];
-        tau_dd[i] = - C * D_p[i] * w_p[i];
+        //tau_dd[i] = - C * D_p[i] * w_p[i]; Energy-non-conserving-scheme
+        tau_dd[i] = - C * Dw_p[i]; // Energy-conserving-scheme
         tau_tr[i] =   max(C * (T)0.5 * (w_p[i] * w_p[i] + D_hat[i] * D_hat[i] + D_p[i] * D_p[i]), small_eps);
-    }   
+    }
 }
 
 template < typename T >

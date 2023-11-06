@@ -43,7 +43,7 @@ using namespace nse;
 //#define DYNAMIC_MODEL
 //#define DYNAMIC_MODEL_PAWAR
 #define REYNOLDS_EQUATION
-//#define SIMPLE_MODEL
+#define SIMPLE_MODEL
 //#define MEAN_FLOW
 
 // - data type precision: float[double] //
@@ -136,9 +136,9 @@ Real Pawar_base_width = 1. * sqrt(6.0);
 bool Pawar_clipping = false;
 int Pawar_averaging = dyn_vorticity_flux;
 
-#ifdef REYNOLDS_EQUATION
+
 Reynolds_eq_struct< Real > Reynolds_eq;
-#endif
+
 
 // --- simple model params --- //
 Real Cs2 = (Real)0.00;
