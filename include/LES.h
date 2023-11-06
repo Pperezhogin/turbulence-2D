@@ -14,6 +14,7 @@
 
 #include "fourier-methods.h"
 #include "dynamic-model.h"
+#include "Reynolds-equation.h"
 
 #include "time-series.h"
 #include "str-com.h"
@@ -40,7 +41,8 @@ using namespace nse;
 
 //#define DIFFUSION
 //#define DYNAMIC_MODEL
-#define DYNAMIC_MODEL_PAWAR
+//#define DYNAMIC_MODEL_PAWAR
+#define REYNOLDS_EQUATION
 //#define SIMPLE_MODEL
 //#define MEAN_FLOW
 
@@ -133,6 +135,10 @@ Real Pawar_test_width = 1. * sqrt(6.0);
 Real Pawar_base_width = 1. * sqrt(6.0);
 bool Pawar_clipping = false;
 int Pawar_averaging = dyn_vorticity_flux;
+
+#ifdef REYNOLDS_EQUATION
+Reynolds_eq_struct< Real > Reynolds_eq;
+#endif
 
 // --- simple model params --- //
 Real Cs2 = (Real)0.00;

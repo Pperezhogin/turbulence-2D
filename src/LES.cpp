@@ -42,6 +42,10 @@ bool model_init()
 		adm_model, adm_order, tf_width, bf_width, 
 		filter_iterations, leonard_scheme,
 		lagrangian_time, dt, grid);
+
+	#ifdef REYNOLDS_EQUATION
+	Reynolds_eq.init(grid);
+	#endif
     
 	balance.init((Real)1.0, grid);
 
@@ -126,6 +130,9 @@ void model_clear()
 #endif
     
     dyn_model.clear();
+	#ifdef REYNOLDS_EQUATION
+	Reynolds_eq.clear();
+	#endif
 }
 
 // --------------------------- //
@@ -193,6 +200,10 @@ bool advance_nse_eq_runge_kutta()
 			dyn_model.Cs2_mean = DSM_Pawar(w, U, V, Pawar_test_width, Pawar_base_width, Pawar_clipping, Pawar_averaging, grid);
 			dyn_model.Cs = sqrt(dyn_model.Cs2_mean);
 		#endif
+
+		#ifdef REYNOLDS_EQUATION
+		Reynolds_eq.RK_init(grid);
+		#endif
         
         memcpy(Psi_rk, Psi, grid.size * sizeof(Real));
         memcpy(w_rk, w, grid.size * sizeof(Real));
@@ -238,6 +249,11 @@ bool advance_nse_eq_runge_kutta()
 			Real mx[grid.size], my[grid.size];
 			curl_tensor(mx, my, mxx, mxy, myy, grid);
 			divergence_vector(wim, mx, my, grid);
+			#endif
+
+			#ifdef REYNOLDS_EQUATION
+			Reynolds_eq.apply(wim, grid);
+			Reynolds_eq.RK_step(w_rk, U_rk, V_rk, q[step] * dt, grid);
 			#endif
 
             if (time_index % ndebug == 0) {

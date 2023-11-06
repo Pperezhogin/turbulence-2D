@@ -22,6 +22,8 @@ bool model_init()
     
     dyn_model.init(viscosity_model, averaging_method, mixed_model, mixed_type, negvisc_backscatter, reynolds_backscatter, 
 	adm_model, adm_order, tf_width, bf_width, filter_iterations, Leonard_PV_Z_scheme, lagrangian_time, dt, grid);
+
+	Reynolds_eq.init(grid);
 	return true;
 }
 
@@ -45,6 +47,7 @@ void model_clear()
 	deallocate(wim);
    
     dyn_model.clear();
+	Reynolds_eq.clear();
 }
 
 // --------------------------- //
@@ -58,12 +61,13 @@ void init_nse_eq()
 // ------------------------------- //
 // Advance Navier-Stokes equation  //
 // ------------------------------- //
-bool advance_nse_eq_runge_kutta(bool dyn_model_on)
+bool advance_nse_eq_runge_kutta(bool dyn_model_on, bool Reynolds_eq_on)
 {
         double begin_mark = omp_get_wtime();
         
 		if (dyn_model_on) dyn_model.update_viscosity(w, U, V, Psi, dt, false, (Real)0.0, grid);
 		if (dyn_model_on) dyn_model.statistics(Psi, w, U, V, dt, grid);
+		if (Reynolds_eq_on) Reynolds_eq.RK_init(grid);
 
         memcpy(Psi_rk, Psi, grid.size * sizeof(Real));
         memcpy(w_rk, w, grid.size * sizeof(Real));
@@ -89,6 +93,11 @@ bool advance_nse_eq_runge_kutta(bool dyn_model_on)
             #endif
             
             if (dyn_model_on) dyn_model.apply(wim, w_rk, U, V, grid);
+
+			if (Reynolds_eq_on) {
+				Reynolds_eq.apply(wim, grid);
+				Reynolds_eq.RK_step(w_rk, U, V, q[step] * dt, grid);
+			}
             
             assign(w_rk, (Real)1.0, w, q[step] * dt, wim, grid.size);
             w_bc(w_rk, grid);
@@ -127,7 +136,7 @@ bool advance_time()
 	return true;
 }
 
-Real launch_model(bool dyn_model_on)
+Real launch_model(bool dyn_model_on, bool Reynolds_eq_on = false)
 {
 	model_setup();
 	model_init();
@@ -151,7 +160,7 @@ Real launch_model(bool dyn_model_on)
     
 	bool status = true;
 	while (current_time < end_time) {
-		if (!advance_nse_eq_runge_kutta(dyn_model_on)) {status = false; break;}
+		if (!advance_nse_eq_runge_kutta(dyn_model_on, Reynolds_eq_on)) {status = false; break;}
 		if (!advance_time()) { status = false; break; }
 	}
 
@@ -236,6 +245,12 @@ int main(int argc, char** argv)
 	if (mpi_rank == 0) printf("DNS        = %.16e \n", abs_error);
 	assert(abs_error < max_abs_error);
 
+	if (mpi_rank == 0) printf("\n");
+
+	if (mpi_rank == 0) printf("Reynolds equation model: \n");
+	abs_error = launch_model(false, true);
+	if (mpi_rank == 0) printf("LES        = %.16e \n", abs_error);
+	assert(abs_error < max_abs_error);
 	if (mpi_rank == 0) printf("\n");
 
 	// ----------- Dynamic models global ----------- //

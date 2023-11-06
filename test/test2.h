@@ -14,6 +14,7 @@
 
 #include "fourier-methods.h"
 #include "dynamic-model.h"
+#include "Reynolds-equation.h"
 
 #include "time-series.h"
 #include "str-com.h"
@@ -112,6 +113,7 @@ mg_mpi_poisson2d_data< Real > mg_data;
 #endif
 
 dynamic_model< Real > dyn_model;
+Reynolds_eq_struct< Real > Reynolds_eq;
 
 const Real pois_retol = (Real) 1e-4, pois_abstol = (Real) 1e-5;
 const int pois_piters = 1;

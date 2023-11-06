@@ -1,4 +1,4 @@
-set (lib_src a-priori.cpp dynamic-model.cpp fourier-methods.cpp mg-data2d.cpp mpi-com2d.cpp mtrand.cpp nse-out2d.cpp nse2d.cpp pois-base2d.cpp pois2d-fft.cpp pois2d.cpp str-com.cpp time-series.cpp memory-reader.cpp)
+set (lib_src Reynolds-equation.cpp a-priori.cpp dynamic-model.cpp fourier-methods.cpp mg-data2d.cpp mpi-com2d.cpp mtrand.cpp nse-out2d.cpp nse2d.cpp pois-base2d.cpp pois2d-fft.cpp pois2d.cpp str-com.cpp time-series.cpp memory-reader.cpp)
 
 add_library(my_lib STATIC ${lib_src})
 
