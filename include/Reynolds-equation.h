@@ -98,9 +98,9 @@ void RHS_Production(T* rhs_xy, T* rhs_dd, T* rhs_tr,
     // Compute the RHS
     for (int i = 0; i < grid.size; i++)
     {
-        rhs_xy[i] = - D[i] * max(tau_tr_w[i], small_eps) - w[i] * tau_dd_w[i];
-        rhs_dd[i] =   w_tau_xy_p[i] - D_hat[i] * max(tau_tr[i], small_eps);
-        rhs_tr[i] = - D_tau_xy_p[i] - D_hat[i] * tau_dd[i];
+        rhs_xy[i] += - D[i] * max(tau_tr_w[i], small_eps) - w[i] * tau_dd_w[i];
+        rhs_dd[i] +=   w_tau_xy_p[i] - D_hat[i] * max(tau_tr[i], small_eps);
+        rhs_tr[i] += - D_tau_xy_p[i] - D_hat[i] * tau_dd[i];
     }
 }
 
@@ -128,17 +128,13 @@ void Velocity_gradients(T* D, T* D_hat,
 
 template < typename T >
 void ZB20_model(T* tau_xy, T* tau_dd, T* tau_tr, 
-                T* w, T* u, T* v, 
+                T* w, T* D, T* D_hat, 
                 const T filter_width, const uniGrid2d< T >& grid)
 {
     /*
     This function computes the SGS stress tensor components
     using the Zanna Bolton (2020) model
     */
-
-    // Velocity gradients
-    T D[grid.size], D_hat[grid.size];
-    Velocity_gradients(D, D_hat, u, v, grid);
 
     T D_p[grid.size], w_p[grid.size];
     w_to_p(D_p, D, grid);
@@ -156,4 +152,43 @@ void ZB20_model(T* tau_xy, T* tau_dd, T* tau_tr,
         tau_dd[i] = - C * D_p[i] * w_p[i];
         tau_tr[i] =   max(C * (T)0.5 * (w_p[i] * w_p[i] + D_hat[i] * D_hat[i] + D_p[i] * D_p[i]), small_eps);
     }   
+}
+
+template < typename T >
+void Relaxation_to_ZB(T* rhs_xy, T* rhs_dd, T* rhs_tr,
+                      T* tau_xy, T* tau_dd, T* tau_tr, 
+                      T* w, T* D, T* D_hat, 
+                      const T filter_width, const uniGrid2d< T >& grid)
+{
+    /*
+    The solution to Reynolds equation has exponentially
+    growing modes. I.e., it does not admit a meaningful equailibrium.
+
+    Here we impose a meaningful equilibrium with the relaxation 
+    towards the Zanna-Bolton (2020) model.
+    */
+ 
+    T ZB_xy[grid.size], ZB_dd[grid.size], ZB_tr[grid.size];
+    ZB20_model(ZB_xy, ZB_dd, ZB_tr, w, D, D_hat, filter_width, grid);
+
+    T S[grid.size], S_w[grid.size];
+    T D_p[grid.size];
+
+    w_to_p(D_p, D, grid);
+
+    for (int i = 0; i < grid.size; i++)
+    {
+        S[i] = sqrt(D_p[i] * D_p[i] + D_hat[i] * D_hat[i]);
+    }
+    p_to_w(S_w, S, grid);
+
+    // As relaxation in energy equation is an uncontrollable source of energy,
+    // We keep for a while only relaxation for two other terms
+    for (int i = 0; i < grid.size; i++)
+    {
+            rhs_xy[i] += (ZB_xy[i] - tau_xy[i]) * S_w[i];
+            rhs_dd[i] += (ZB_dd[i] - tau_dd[i]) * S[i];
+            rhs_tr[i] += (ZB_tr[i] - tau_tr[i]) * S[i];
+    }
+
 }

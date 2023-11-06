@@ -34,8 +34,12 @@ void Reynolds_eq_struct<T>::clear()
 template<typename T>
 void Reynolds_eq_struct<T>::init_with_ZB(T* w, T* u, T* v, const T filter_width, const uniGrid2d< T >&grid)
 {
+    // Velocity gradients
+    T D[grid.size], D_hat[grid.size];
+    Velocity_gradients(D, D_hat, u, v, grid);
+
     ZB20_model(tau_xy, tau_dd, tau_tr, 
-               w, u, v, 
+               w, D, D_hat, 
                filter_width, grid);
 }
 
@@ -98,11 +102,20 @@ void Reynolds_eq_struct<T>::RK_step(T* w, T* u, T* v, T dt, const uniGrid2d< T >
     // Compute instantaneous velocity gradients
     Velocity_gradients(D, D_hat, u, v, grid);
 
+    assign(rhs_xy, (T)0.0, grid.size);
+    assign(rhs_dd, (T)0.0, grid.size);
+    assign(rhs_tr, (T)0.0, grid.size);
+
     // Start forming the RHS
     RHS_Production(rhs_xy, rhs_dd, rhs_tr,
                    tau_xy, tau_dd, tau_tr, // Here we use current SGS tensor
                    w, D, D_hat,            // Here we use current gradients 
                    grid);
+
+    Relaxation_to_ZB(rhs_xy, rhs_dd, rhs_tr,
+                     tau_xy, tau_dd, tau_tr, 
+                     w, D, D_hat, 
+                    (T)sqrt(6.0), grid);
     
     upwind_advection_w(rhs_xy, u, v, tau_xy, grid);
     upwind_advection_p(rhs_dd, u, v, tau_dd, grid);
