@@ -44,6 +44,7 @@ bool model_init()
 		lagrangian_time, dt, grid);
 
 	Reynolds_eq.init(grid);	
+	Lagrangian_eq.init(grid);
     
 	balance.init((Real)1.0, grid);
 
@@ -133,6 +134,7 @@ void model_clear()
     
     dyn_model.clear();
 	Reynolds_eq.clear();
+	Lagrangian_eq.clear();
 }
 
 // --------------------------- //
@@ -145,6 +147,9 @@ void init_nse_eq()
 	#endif
 	#ifdef REYNOLDS_EQUATION
 	Reynolds_eq.init_with_ZB(w, U, V, sqrt(6.0), grid);
+	#endif
+	#ifdef LAGRANGIAN_EQUATION
+	Lagrangian_eq.init_with_ZB(w, U, V, sqrt(6.0), grid);
 	#endif
 }
 
@@ -208,6 +213,10 @@ bool advance_nse_eq_runge_kutta()
 		Reynolds_eq.diagnostics(Psi, w, U, V, grid);
 		Reynolds_eq.RK_init(grid);
 		#endif
+
+		#ifdef LAGRANGIAN_EQUATION
+		Lagrangian_eq.RK_init(grid);
+		#endif
         
         memcpy(Psi_rk, Psi, grid.size * sizeof(Real));
         memcpy(w_rk, w, grid.size * sizeof(Real));
@@ -258,6 +267,11 @@ bool advance_nse_eq_runge_kutta()
 			#ifdef REYNOLDS_EQUATION
 			Reynolds_eq.apply(wim, grid);
 			Reynolds_eq.RK_step(w_rk, U_rk, V_rk, q[step] * dt, grid);
+			#endif
+
+			#ifdef LAGRANGIAN_EQUATION
+			Lagrangian_eq.apply(wim, grid);
+			Lagrangian_eq.RK_step(w_rk, U_rk, V_rk, q[step] * dt, grid);
 			#endif
 
             if (time_index % ndebug == 0) {
@@ -523,6 +537,11 @@ int main(int argc, char** argv)
 			write_binary_przgn(OUTPUT_DIR"tau_xy.nsx", Reynolds_eq.tau_xy, grid, print_index);
 			write_binary_przgn(OUTPUT_DIR"tau_dd.nsx", Reynolds_eq.tau_dd, grid, print_index);
 			write_binary_przgn(OUTPUT_DIR"tau_tr.nsx", Reynolds_eq.tau_tr, grid, print_index);
+			#endif
+
+			#ifdef LAGRANGIAN_EQUATION
+			write_binary_przgn(OUTPUT_DIR"fx.nsx", Lagrangian_eq.fx, grid, print_index);
+			write_binary_przgn(OUTPUT_DIR"fy.nsx", Lagrangian_eq.fy, grid, print_index);
 			#endif
 
 			print_mark += print_dt;

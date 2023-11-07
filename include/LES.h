@@ -42,7 +42,8 @@ using namespace nse;
 //#define DIFFUSION
 //#define DYNAMIC_MODEL
 //#define DYNAMIC_MODEL_PAWAR
-#define REYNOLDS_EQUATION
+//#define REYNOLDS_EQUATION
+#define LAGRANGIAN_EQUATION
 #define SIMPLE_MODEL
 //#define MEAN_FLOW
 
@@ -138,6 +139,7 @@ int Pawar_averaging = dyn_vorticity_flux;
 
 
 Reynolds_eq_struct< Real > Reynolds_eq;
+Lagrangian_eq_struct< Real > Lagrangian_eq;
 
 
 // --- simple model params --- //

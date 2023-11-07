@@ -785,6 +785,88 @@ void upwind_advection_w(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid, bo
     }
 }
 
+// upwind tendency in u points
+template < typename T >
+void upwind_advection_u(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid)
+{
+    int i, j, idx;
+    T flux_u[grid.size], flux_v[grid.size]; // u and v fluxes in p and w points
+
+    grid.mpi_com.exchange_halo(X,
+        grid.nx, grid.ny, grid.gcx, grid.gcy,
+        1, 1, 1, 1);
+
+    T u_p[grid.size], v_w[grid.size]; // Interpolated velocities
+    u_to_p(u_p, u, grid);
+    v_to_w(v_w, v, grid);
+
+    for (i = grid.gcx; i < grid.nx - grid.gcx; i++)
+    {
+        idx = i * grid.ny + grid.gcy;
+        for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
+            flux_u[idx] = max(u_p[idx], (T)0.0) * X[idx]
+                        + min(u_p[idx], (T)0.0) * X[idx + grid.ny];
+            flux_v[idx] = max(v_w[idx], (T)0.0) * X[idx - 1]
+                        + min(v_w[idx], (T)0.0) * X[idx];
+        }
+    }
+
+    grid.mpi_com.exchange_halo(flux_u, flux_v,
+        grid.nx, grid.ny, grid.gcx, grid.gcy,
+        1, 1, 1, 1);
+
+    for (i = grid.gcx; i < grid.nx - grid.gcx; i++)
+    {
+        idx = i * grid.ny + grid.gcy;
+        for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
+
+            wim[idx] -= (flux_u[idx] - flux_u[idx - grid.ny]) * grid.dxi
+                      + (flux_v[idx + 1] - flux_v[idx]) * grid.dyi;
+        }
+    }
+}
+
+// upwind tendency in v points
+template < typename T >
+void upwind_advection_v(T* wim, T* u, T* v, T* X, const uniGrid2d< T >& grid)
+{
+    int i, j, idx;
+    T flux_u[grid.size], flux_v[grid.size]; // u and v fluxes in w and p points
+
+    grid.mpi_com.exchange_halo(X,
+        grid.nx, grid.ny, grid.gcx, grid.gcy,
+        1, 1, 1, 1);
+
+    T u_w[grid.size], v_p[grid.size]; // Interpolated velocities
+    u_to_w(u_w, u, grid);
+    v_to_p(v_p, v, grid);
+
+    for (i = grid.gcx; i < grid.nx - grid.gcx; i++)
+    {
+        idx = i * grid.ny + grid.gcy;
+        for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
+            flux_u[idx] = max(u_w[idx], (T)0.0) * X[idx - grid.ny]
+                        + min(u_w[idx], (T)0.0) * X[idx];
+            flux_v[idx] = max(v_p[idx], (T)0.0) * X[idx]
+                        + min(v_p[idx], (T)0.0) * X[idx + 1];
+        }
+    }
+
+    grid.mpi_com.exchange_halo(flux_u, flux_v,
+        grid.nx, grid.ny, grid.gcx, grid.gcy,
+        1, 1, 1, 1);
+
+    for (i = grid.gcx; i < grid.nx - grid.gcx; i++)
+    {
+        idx = i * grid.ny + grid.gcy;
+        for (j = grid.gcy; j < grid.ny - grid.gcy; j++, idx++) {
+
+            wim[idx] -= (flux_u[idx + grid.ny] - flux_u[idx]) * grid.dxi
+                      + (flux_v[idx] - flux_v[idx-1]) * grid.dyi;
+        }
+    }
+}
+
 // abs value in p points
 template < typename T >
 void abs_vector(T* abs_p, T* sx, T* sy, const uniGrid2d< T >& grid)

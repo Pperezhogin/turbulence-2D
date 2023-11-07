@@ -9,7 +9,23 @@
 using namespace nse;
 #define small_eps std::numeric_limits<T>::min()
 
-enum {set_zero_energy, set_ZB_energy};
+template < typename T >
+struct Lagrangian_eq_struct
+{
+    T* fx; // Zonal acceleration
+    T* fy; // Meridional acceleration
+
+    T* fxp; // Zonal acceleration in past time moment
+    T* fyp; // Meridional acceleration in past time moment
+
+    public:
+        void init(const uniGrid2d< T >&grid);
+        void clear();
+        void init_with_ZB(T* w, T* u, T* v, const T filter_width, const uniGrid2d< T >&grid);
+        void RK_init(const uniGrid2d< T >&grid);
+        void RK_step(T* w, T* u, T* v, T dt, const uniGrid2d< T >&grid);
+        void apply(T* wim, const uniGrid2d< T >&grid);
+};
 
 template< typename T >
 struct Reynolds_eq_struct
@@ -154,10 +170,28 @@ void ZB20_model(T* tau_xy, T* tau_dd, T* tau_tr,
     {
         // Compute the SGS tensor components
         tau_xy[i] =   C * D_hat_w[i] * w[i];
-        //tau_dd[i] = - C * D_p[i] * w_p[i]; Energy-non-conserving-scheme
-        tau_dd[i] = - C * Dw_p[i]; // Energy-conserving-scheme
+        tau_dd[i] = - C * D_p[i] * w_p[i]; //Energy-non-conserving-scheme
+        //tau_dd[i] = - C * Dw_p[i]; // Energy-conserving-scheme
         tau_tr[i] =   max(C * (T)0.5 * (w_p[i] * w_p[i] + D_hat[i] * D_hat[i] + D_p[i] * D_p[i]), small_eps);
     }
+}
+
+template < typename T >
+void ZB20_model_uv(T* fx, T* fy,
+                T* w, T* D, T* D_hat, 
+                const T filter_width, const uniGrid2d< T >& grid)
+{
+    T tau_xy[grid.size], tau_dd[grid.size], tau_tr[grid.size];
+    ZB20_model(tau_xy, tau_dd, tau_tr, w, D, D_hat, filter_width, grid);
+
+    T Txx[grid.size], Tyy[grid.size], Txy[grid.size];
+    for (int i = 0; i < grid.size; i++)
+    {
+        Txx[i] = (tau_tr[i] + tau_dd[i]);
+        Tyy[i] = (tau_tr[i] - tau_dd[i]);
+        Txy[i] =  tau_xy[i];
+    }
+    divergence_tensor(fx, fy, Txx, Txy, Tyy, grid); // Minus inside
 }
 
 template < typename T >
@@ -196,5 +230,35 @@ void Relaxation_to_ZB(T* rhs_xy, T* rhs_dd, T* rhs_tr,
             rhs_dd[i] += (ZB_dd[i] - tau_dd[i]) * S[i];
             rhs_tr[i] += (ZB_tr[i] - tau_tr[i]) * S[i];
     }
+}
 
+template < typename T >
+void Relaxation_to_ZB_uv(T* rhs_x, T* rhs_y,
+                         T* fx, T* fy,
+                         T* w, T* D, T* D_hat, 
+                         const T filter_width, const uniGrid2d< T >& grid)
+{
+
+    T ZB_x[grid.size], ZB_y[grid.size];
+    ZB20_model_uv(ZB_x, ZB_y, w, D, D_hat, filter_width, grid);
+
+    T S[grid.size], S_u[grid.size], S_v[grid.size];
+    T D_p[grid.size];
+
+    w_to_p(D_p, D, grid);
+
+    for (int i = 0; i < grid.size; i++)
+    {
+        S[i] = sqrt(D_p[i] * D_p[i] + D_hat[i] * D_hat[i]);
+    }
+    p_to_u(S_u, S, grid);
+    p_to_v(S_v, S, grid);
+
+    // As relaxation in energy equation is an uncontrollable source of energy,
+    // We keep for a while only relaxation for two other terms
+    for (int i = 0; i < grid.size; i++)
+    {
+            rhs_x[i] += (ZB_x[i] - fx[i]) * S_u[i];
+            rhs_y[i] += (ZB_y[i] - fy[i]) * S_v[i];
+    }
 }

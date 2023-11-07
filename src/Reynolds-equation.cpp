@@ -2,6 +2,90 @@
 
 #define small_eps std::numeric_limits<T>::min()
 
+template < typename T >
+void Lagrangian_eq_struct<T>::init(const uniGrid2d< T >&grid)
+{
+    allocate(&fx, grid.size);
+    allocate(&fy, grid.size);
+
+    allocate(&fxp, grid.size);
+    allocate(&fyp, grid.size);
+
+    // Init SGS tensor to small non-zero value
+    assign(fx, (T)0.0, grid.size);
+    assign(fy, (T)0.0, grid.size);
+}
+
+template < typename T >
+void Lagrangian_eq_struct<T>::clear() 
+{
+    deallocate(fx);
+    deallocate(fy);
+
+    deallocate(fxp);
+    deallocate(fyp);
+}
+
+template < typename T >
+void Lagrangian_eq_struct<T>::init_with_ZB(T* w, T* u, T* v, const T filter_width, const uniGrid2d< T >&grid)
+{
+    // Velocity gradients
+    T D[grid.size], D_hat[grid.size];
+    Velocity_gradients(D, D_hat, u, v, grid);
+
+    ZB20_model_uv(fx, fy,
+               w, D, D_hat, 
+               filter_width, grid);   
+}
+
+template < typename T >
+void Lagrangian_eq_struct<T>::RK_init(const uniGrid2d< T >&grid)
+{
+    memcpy(fxp, fx, grid.size * sizeof(T));
+    memcpy(fyp, fy, grid.size * sizeof(T));
+}
+
+template < typename T >
+void Lagrangian_eq_struct<T>::RK_step(T* w, T* u, T* v, T dt, const uniGrid2d< T >&grid)
+{
+    T D[grid.size], D_hat[grid.size];
+    T rhs_x[grid.size], rhs_y[grid.size];
+
+    // Compute instantaneous velocity gradients
+    Velocity_gradients(D, D_hat, u, v, grid);
+
+    assign(rhs_x, (T)0.0, grid.size);
+    assign(rhs_y, (T)0.0, grid.size);
+
+    Relaxation_to_ZB_uv(rhs_x, rhs_y,
+                        fx, fy,
+                        w, D, D_hat, 
+                        (T)sqrt(6.0), grid);
+    
+    upwind_advection_u(rhs_x, u, v, fx, grid);
+    upwind_advection_v(rhs_y, u, v, fy, grid);
+
+    assign(fx, (T)1.0, fxp, dt, rhs_x, grid.size);
+    assign(fy, (T)1.0, fyp, dt, rhs_y, grid.size);
+
+    // ZB20_model_uv(fx, fy,
+    //            w, D, D_hat, 
+    //            (T)sqrt(6.0), grid);   
+}
+
+template<typename T>
+void Lagrangian_eq_struct<T>::apply(T* wim, const uniGrid2d< T >&grid)
+{
+    /*
+    Update the vorticity tendency with the current SGS tensor.
+    */
+    
+    // Vorticity forcing
+    T f[grid.size];
+    velocity_to_vorticity(f, fx, fy, grid);
+    update(wim, (T)1.0, f, grid.size);
+}
+
 template< typename T >
 void Reynolds_eq_struct<T>::init(const uniGrid2d< T >&grid)
 {
@@ -159,3 +243,6 @@ void Reynolds_eq_struct<T>::apply(T* wim, const uniGrid2d< T >&grid)
 
 template struct Reynolds_eq_struct< float >;
 template struct Reynolds_eq_struct< double >;
+
+template struct Lagrangian_eq_struct< float >;
+template struct Lagrangian_eq_struct< double >;
